@@ -5,12 +5,12 @@ import pandas as pd
 from market.data.options import filter_panel, occ_ticker, option_root, parse_occ
 
 BANDS = {
-    "dte_min": 1,
-    "dte_max": 800,
-    "put_strike_pct": [0.60, 1.05],
-    "call_strike_pct": [0.95, 1.40],
-    "leap_dte_min": 240,
-    "leap_call_strike_pct": [0.40, 1.00],
+    "short_dte": [7, 60],
+    "put_strike_pct": [0.70, 1.02],
+    "call_strike_pct": [0.98, 1.20],
+    "leap_dte": [180, 800],
+    "leap_call_strike_pct": [0.50, 1.00],
+    "min_volume": 5,
 }
 SESSION = date(2026, 10, 7)
 
@@ -32,16 +32,25 @@ def test_option_root_drops_class_separator():
 
 
 def test_filter_keeps_only_band_rows():
-    rows = pd.DataFrame({"ticker": [
+    tickers = [
         occ_ticker("AAPL", date(2026, 11, 20), "P", 90),    # 90% put, 44 DTE -> keep
-        occ_ticker("AAPL", date(2026, 11, 20), "P", 50),    # 50% put -> drop (below band)
+        occ_ticker("AAPL", date(2026, 11, 20), "P", 60),    # 60% put -> drop (below band)
         occ_ticker("AAPL", date(2026, 11, 20), "C", 110),   # 110% call -> keep
         occ_ticker("AAPL", date(2026, 11, 20), "C", 70),    # deep ITM short-dated call -> drop
         occ_ticker("AAPL", date(2028, 1, 21), "C", 70),     # deep ITM LEAP call -> keep
+        occ_ticker("AAPL", date(2027, 2, 19), "C", 100),    # 135 DTE: between bands -> drop
         occ_ticker("AAPL", date(2029, 1, 19), "C", 100),    # beyond 800 DTE -> drop
         occ_ticker("AAPL1", date(2026, 11, 20), "P", 90),   # adjusted root -> drop
-        occ_ticker("MSFT", date(2026, 11, 20), "P", 90),    # not in universe -> drop
-    ]})
+        occ_ticker("MSFT", date(2026, 11, 20), "P", 90),    # not in the option set -> drop
+        occ_ticker("AAPL", date(2026, 11, 20), "P", 95),    # in band but volume 2 -> drop
+    ]
+    rows = pd.DataFrame({
+        "ticker": tickers,
+        "open": 1.0, "close": 1.1, "transactions": 4,
+        "volume": [10] * 9 + [2],
+    })
     kept = filter_panel(rows, SESSION, {"AAPL": 100.0}, BANDS)
     assert list(kept.index) == [0, 2, 4]
-    assert kept.loc[0, "dte"] == 44
+    assert list(kept.columns) == ["session", "root", "expiry", "kind", "strike", "open", "close", "volume", "transactions"]
+    assert kept.loc[4, "kind"] == "C" and kept.loc[4, "strike"] == 70.0
+    assert occ_ticker(kept.loc[0, "root"], kept.loc[0, "expiry"].date(), kept.loc[0, "kind"], kept.loc[0, "strike"]) == tickers[0]

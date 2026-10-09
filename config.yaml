@@ -7,26 +7,33 @@ paths:
   smartmoney_repo: ../smartmoney          # ledgers read in place (decision D3)
 
 polygon:
-  base_url: https://api.polygon.io
+  base_url: https://api.massive.com
   max_concurrency: 16                     # paid plan: unlimited calls; keep requests polite
   timeout_seconds: 30
   max_retries: 4
-  flatfiles_endpoint: https://files.polygon.io
+  flatfiles_endpoint: https://files.massive.com
   flatfiles_bucket: flatfiles
   stocks_history_years: 5
 
 benchmark: SPY
 
 options:
+  # Options are gathered only for a select set of underlyings (decision D8). Each one costs
+  # ~0.5 KB/day in the panel (~0.35 MB per 2 years), measured 2026-10-09.
+  underlyings:
+    watchlists: true                      # every watchlist with `options: true` (watchlists.yaml)
+    category_slots: []                    # e.g. [mom12_sp500.top5, rankmom_sp500.top5] — names entering
+                                          # these slots join the option set from that date
+    max_underlyings: 200                  # hard cap; additions beyond it are refused and reported
   # Option panel (PLAN §4): rows from the daily OPRA day-aggregates file are kept only if they
-  # fall inside these bands. Changing bands requires a one-time re-stream of the flat files.
+  # fall inside a band. Contracts we hold that drift outside the bands are fetched per contract.
   panel:
-    dte_min: 1
-    dte_max: 800
-    put_strike_pct: [0.60, 1.05]          # strike / spot
-    call_strike_pct: [0.95, 1.40]
-    leap_dte_min: 240
-    leap_call_strike_pct: [0.40, 1.00]
+    short_dte: [7, 60]                    # CSP / covered-call selection
+    put_strike_pct: [0.70, 1.02]          # strike / spot
+    call_strike_pct: [0.98, 1.20]
+    leap_dte: [180, 800]
+    leap_call_strike_pct: [0.50, 1.00]
+    min_volume: 5
   # Fills (PLAN §2.4): sell at mid*(1-h), buy at mid*(1+h)
   haircut:
     base_pct: 0.03

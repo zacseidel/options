@@ -1,6 +1,6 @@
 # Plan — unified stock & options research system
 
-Draft 2 · 2026-10-08 · inputs: `docs/reviews/01-momentum.md`, `02-eval.md`, `03-smartmoney.md`
+Draft 3 · 2026-10-09 · inputs: `docs/reviews/01-momentum.md`, `02-eval.md`, `03-smartmoney.md`
 Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions are in §13.
 
 ---
@@ -15,6 +15,9 @@ Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions ar
 | D4 | Historical S&P 500/400 membership is rebuilt from Wikipedia's change tables |
 | D5 | Python package `market`, GitHub repo `zacseidel/options` |
 | D6 | Efficiency is a design constraint: each piece of historical data is fetched once, no large raw stores, incremental daily work |
+| D7 | Plans: **Stocks Starter** (5-yr rolling history, 15-min delayed, reference, corporate actions, indicators) and **Options Starter** (2-yr history, 15-min delayed, greeks/IV/OI in snapshots, flat files). Probe results: `data/state/probe-2026-10-09.json` |
+| D8 | **Stocks are gathered broadly; options only for a select set of underlyings** (watchlists flagged `options: true` + names entering configured category slots, capped at 200) |
+| D9 | **Watchlists** (`watchlists.yaml`) are first-class universes alongside S&P 500/400 |
 
 ---
 
@@ -75,7 +78,11 @@ Polygon (Massive) facts used in this design:
   OHLC, volume, transactions; no VWAP, no OI), about 1.5–3 MB per day, published around 11:00 ET
   the next day. History is **2 yr on Starter, 4 yr on Developer, 5+ yr on Advanced**. Historical
   quotes are Advanced-only.
-- **Option snapshot by underlying:** today's chain with greeks, IV, OI and day bar, 15-min delayed.
+- **Option snapshot by underlying:** today's chain, 15-min delayed. Measured coverage: OI on 100 % of
+  contracts, greeks/IV on ~60 % (the illiquid ones are missing), **no bid/ask** on Starter. Filters such as
+  `strike_price.gte/lte` and `expiration_date.gte/lte` keep it to one page per underlying.
+- Stock history is a **rolling** 5-year window; because we store what we fetch, our own history keeps
+  growing past 5 years.
 - An option ticker can be computed from its terms (`O:AAPL261120P00150000`), so contract lists
   are needed only for discovery.
 
@@ -87,7 +94,7 @@ Polygon (Massive) facts used in this design:
 | Ticker events and details | only securities that were ever in a tracked universe | ~2,000 calls | compact `securities`, `ticker_history`, `company_meta` |
 | Shares outstanding history (for point-in-time market cap) | SEC company-facts, one call per company with full history | ~1,200 | quarterly rows |
 | S&P 500/400 membership history | Wikipedia lists + change tables | 2 pages | membership intervals |
-| Options history | flat files, one per session, **streamed and filtered, never stored raw** | 500 (Starter) to 1,000 (Developer) files, ~1–3 GB transferred once | filtered option panel (§4) |
+| Options history | flat files, one per session (~2.5–4 MB), **streamed and filtered to the select option set, never stored raw** | ~500 files, ~1.7 GB transferred once | option panel (§4) |
 | Congress, 13F | smartmoney ledgers, local file read | 0 | normalized tables |
 
 ### 3b. Daily run
@@ -125,7 +132,7 @@ discarded.
 | `securities`, `ticker_history`, `company_meta`, `shares_history` | reference | <10 MB |
 | `calendar` | sessions, early closes (from grouped daily + Polygon holidays) | tiny |
 | `universe_membership`, `universe_weights` | intervals; SSGA weights only on change days | <5 MB |
-| `option_bars` | **filtered option panel**: option universe × bands below | ~50–150 MB |
+| `option_bars` | **option panel**: select option set × bands below | ~0.35 MB per underlying per 2 yr → ~35–70 MB for 100–200 names |
 | `option_marks` | daily snapshot marks for contracts we hold or show (bid/ask/IV/Δ/OI) | <5 MB |
 | `congress_trades`, `f13_filings`, `f13_holdings`, `entities`, `entity_scores` | sources | ~20 MB |
 | `category_snapshots` | top-K per category per date (K = max(slot) + 15, e.g. 25), not the whole universe | ~20 MB |
@@ -134,16 +141,18 @@ discarded.
 | `runs`, `fetch_log`, `versions` | operations | tiny |
 | **Total** | | **~300 MB** |
 
-**Option panel filter.** A row from the daily options file is kept only if all of these hold:
-- its underlying is in the **option universe**: S&P 500 + S&P 400 members plus any security ever
-  in a category that feeds an option strategy, about 1,000 names;
-- `1 ≤ DTE ≤ 800`;
-- the strike is inside the method bands: puts 60–105 % of spot, calls 95–140 % of spot, and LEAP
-  calls 40–100 % of spot when DTE > 240.
-
-Storing this filtered panel, not just the contracts we chose, means a **new option variant (other
-delta or DTE) needs no new downloads**. Changing the bands needs a one-time re-stream (about 1–3 GB).
-The filter is defined in config and the probe in §11 measures its real size.
+**Option panel filter** (measured on 5 real sessions, 2026-10-02 → 10-08). A row from the daily
+options file is kept only if its underlying is in the **select option set** (D8) and it falls in a band:
+short-dated (7–60 DTE) puts at 70–102 % of spot or calls at 98–120 %, or LEAP calls (180–800 DTE) at
+50–100 %, with volume ≥ 5. The stored columns are `session, root, expiry, kind, strike, open, close,
+volume, transactions`; the OCC ticker string, high and low aren't stored. Cost: **~35 rows and ~0.5 KB per
+underlying per day**. For comparison, the full S&P 900 would cost ~210 MB with these bands, or ~630 MB
+with draft 2's wider bands. Two follow-ups:
+- A held contract that drifts outside the bands (say, a put after a crash) is fetched per contract by
+  REST and cached in the same table.
+- Names added to the option set later are backfilled in **one batched re-stream** of the 2-yr files for
+  all pending additions (~500 downloads, run only when the set has grown), so files are never re-read
+  one name at a time.
 
 **Site output:** a few MB of JSON, regenerated each run and force-pushed as a single commit to
 `gh-pages`, so there's no history. Only the files that changed are rewritten.
@@ -158,6 +167,8 @@ The filter is defined in config and the probe in §11 measures its real size.
 | `sp500`, `sp400` | Wikipedia change tables replayed backward from today's SSGA list, then matched to `security_id` through `ticker_history` (handles BRK.B / BRK-B and renames). The S&P 400 page's change history is thinner, so a coverage report is built and gaps are flagged in the UI. |
 | `megacap25`, `top50` | point-in-time market cap = adjusted close × shares outstanding (SEC facts), ranked within `sp500`; GOOG/GOOGL combined. SSGA weights are used for live dates. |
 | `sp400_large15` | top 15 % of `sp400` by market cap (replaces MDY weight historically) |
+| `watchlist:<name>`, `watchlists` | `watchlists.yaml`: plain tickers or `TICKER: added-date`. Removing a name closes its membership on the sync date, so history is kept. Undated names count for all history, and backtests on them are flagged as hindsight-selected. |
+| `options` (the select option set) | watchlists with `options: true` ∪ names entering `options.underlyings.category_slots`, from the date they enter; capped by `max_underlyings` |
 
 ---
 
@@ -360,10 +371,10 @@ one Saturday run for disclosures only.
 
 ## 13. Open questions
 
-1. **Options plan tier:** Starter (2 yr) or Developer (4 yr)? This sets how far back option
-   backtests go. The probe will confirm either way.
-2. **Option universe size:** S&P 500 + 400 + category names, about 1,000 underlyings, or S&P 500
-   + category names only? Fewer names means a smaller panel and fewer snapshots.
+1. ~~Options plan tier~~ → Options Starter: option backtests cover 2 years (D7).
+2. **Which category slots feed the option set?** For example `mom12_sp500.top5` and
+   `rankmom_sp500.top5`. Over 2 years each top-5 slot brings in roughly 50–100 names, so a few slots
+   plus the watchlists stays well under the 200 cap.
 3. **CSP behaviour at window end:** let the put run to expiry (default) or buy it back?
    **Assignment:** hold until window end (default), sell the next session, or wheel?
 4. **Report publish days:** Tue/Fri (default) or daily?

@@ -195,18 +195,17 @@ async def check_options(poly: Polygon, today: date, checks: list[Check]) -> None
                 "expiration_date.gte": str(today + timedelta(days=25)),
                 "expiration_date.lte": str(today + timedelta(days=50)),
                 "contract_type": "put",
-                "limit": 50,
+                "limit": 250,
             },
         )
         res = body.get("results") or []
-        first = res[0] if res else {}
+        share = lambda test: round(sum(1 for r in res if test(r)) / len(res), 2) if res else 0.0
         present = {
-            "greeks": bool(first.get("greeks")),
-            "implied_volatility": first.get("implied_volatility") is not None,
-            "open_interest": first.get("open_interest") is not None,
-            "last_quote_bid_ask": bool((first.get("last_quote") or {}).get("bid")),
-            "day_bar": bool(first.get("day")),
-            "day_vwap": (first.get("day") or {}).get("vwap") is not None,
+            "greeks": share(lambda r: (r.get("greeks") or {}).get("delta") is not None),
+            "implied_volatility": share(lambda r: r.get("implied_volatility") is not None),
+            "open_interest": share(lambda r: r.get("open_interest") is not None),
+            "last_quote_bid_ask": share(lambda r: (r.get("last_quote") or {}).get("bid") is not None),
+            "day_bar": share(lambda r: bool(r.get("day"))),
         }
         checks.append(Check("options.snapshot", bool(res), f"{len(res)} contracts; fields: {present}", present))
     except PolygonError as exc:
@@ -259,7 +258,7 @@ def check_flatfiles(
     if not flatfiles.available():
         checks.append(Check(
             "flatfiles.access", None,
-            "skipped — set POLYGON_S3_ACCESS_KEY_ID / POLYGON_S3_SECRET_ACCESS_KEY in .env "
+            "skipped — set MASSIVE_API_KEY_ID (+ MASSIVE_API_KEY) in .env "
             "(dashboard → Flat Files) to measure the option panel",
         ))
         return
@@ -295,16 +294,8 @@ def check_flatfiles(
     scratch = directory("state") / "probe_panel.duckdb"
     scratch.unlink(missing_ok=True)
     with duckdb.connect(str(scratch)) as con:
-        table = kept[["ticker", "root", "expiry", "type", "strike", "dte", "open", "high", "low", "close", "volume", "transactions"]]
-        con.register("kept", table)
-        con.execute("""
-            CREATE TABLE option_bars AS
-            SELECT ticker, root, CAST(expiry AS DATE) AS expiry, type, CAST(strike AS DOUBLE) AS strike,
-                   CAST(dte AS SMALLINT) AS dte, CAST(open AS FLOAT) AS open, CAST(high AS FLOAT) AS high,
-                   CAST(low AS FLOAT) AS low, CAST(close AS FLOAT) AS close,
-                   CAST(volume AS INTEGER) AS volume, CAST(transactions AS INTEGER) AS transactions
-            FROM kept
-        """)
+        con.register("kept", kept)
+        con.execute("CREATE TABLE option_bars AS SELECT * FROM kept ORDER BY root, session, expiry, kind, strike")
         con.execute("CHECKPOINT")
     db_bytes = scratch.stat().st_size
     scratch.unlink(missing_ok=True)
@@ -316,8 +307,8 @@ def check_flatfiles(
     checks.append(Check(
         "flatfiles.panel_size", True,
         f"{session}: file {compressed / 1e6:.1f} MB, {len(frame):,} contracts → kept {len(kept):,} "
-        f"for {kept['root'].nunique()} of {len(roots)} roots; one day ≈ {db_bytes / 1e6:.1f} MB in DuckDB "
-        f"(includes fixed overhead); parse+filter {time.perf_counter() - started:.1f}s",
+        f"for {kept['root'].nunique()} of {len(roots)} roots ({len(kept) / max(kept['root'].nunique(), 1):.0f}/root); "
+        f"one day ≈ {db_bytes / 1e6:.1f} MB in DuckDB incl. fixed overhead; parse+filter {time.perf_counter() - started:.1f}s",
         {"session": str(session), "rows_total": len(frame), "rows_kept": len(kept),
          "compressed_bytes": compressed, "duckdb_bytes_one_day": db_bytes, "estimates": est},
     ))

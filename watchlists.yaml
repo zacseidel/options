@@ -1,0 +1,27 @@
+# Custom universes (edit freely). Each list becomes universe `watchlist:<name>`, and all lists
+# together form `watchlists`. Any category can run on them, like sp500 or sp400.
+#
+#   options: true   → the list's names join the select option set (config.yaml options.underlyings)
+#   tickers:        → plain tickers, or `TICKER: YYYY-MM-DD` to record when it was added
+#                     (membership starts that day; undated names count for all history,
+#                     so backtests on them are hindsight-selected and flagged as such)
+
+watchlists:
+  momentum_watch:
+    description: Momentum names worth watching (from smartmoney positions.md)
+    options: true
+    tickers:
+      - VLO: 2026-09-04
+      - DELL: 2026-09-04
+
+  hedge_watch:
+    description: Names hedge-fund research keeps surfacing (from smartmoney positions.md)
+    options: true
+    tickers:
+      - SPCX: 2026-09-04
+      - PBLS: 2026-09-04
+      - INTC: 2026-09-04
+      - MRVL: 2026-09-04
+      - ALAB: 2026-09-04
+      - CRDO: 2026-09-04
+      - BE: 2026-09-04
