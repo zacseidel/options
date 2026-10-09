@@ -1,0 +1,31 @@
+# Strategy = Category × Slot × Method (hold rule + instrument). Edit freely; each entry is
+# evaluated over the category's full history. `visible: false` keeps evaluating but hides it.
+#
+# hold rules:
+#   while_listed          hold while the name stays in the slot; sell at the first session on/after
+#                         the report that drops it (the eval repo's rank strategies)
+#   price_exit            enter while flat; sell the session after a close crosses an indicator
+#   fixed_hold            every listing opens its own lot; sell N sessions after entry
+# instrument: stock for now; options instruments (csp, covered_call, leap, diagonal) come next.
+
+defaults:
+  instrument: stock
+  visible: true
+
+strategies:
+  - {id: mom12_sp500.top5,     category: mom12_sp500,     slot: [1, 5],  hold: while_listed}
+  - {id: mom12_sp500.next5,    category: mom12_sp500,     slot: [6, 10], hold: while_listed}
+  - {id: mom12_sp400.top5,     category: mom12_sp400,     slot: [1, 5],  hold: while_listed}
+  - {id: mom12_sp400.next5,    category: mom12_sp400,     slot: [6, 10], hold: while_listed}
+  - {id: mom12_megacap.top5,   category: mom12_megacap,   slot: [1, 5],  hold: while_listed}
+  - {id: mom12_megacap.next5,  category: mom12_megacap,   slot: [6, 10], hold: while_listed}
+  - id: laggards_mega10.top2.hold21
+    category: laggards_mega10
+    slot: [1, 2]
+    hold: fixed_hold
+    params: {sessions: 21}
+  - id: munger_top50.all.ema21
+    category: munger_top50
+    slot: all
+    hold: price_exit
+    params: {indicator: ema, window: 21, exit_when: below}

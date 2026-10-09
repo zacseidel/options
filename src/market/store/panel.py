@@ -29,6 +29,7 @@ class Panel:
     low: pd.DataFrame
     vwap: pd.DataFrame
     raw_close: pd.DataFrame
+    volume: pd.DataFrame
     tr: pd.DataFrame
     split_factor: pd.DataFrame
 
@@ -89,7 +90,7 @@ def load_panel(
     if securities:
         where.append(f"security_id IN ({','.join('?' * len(securities))})"); params.extend(securities)
     bars = con.execute(
-        f"SELECT security_id, date, open, high, low, close, vwap FROM bars_daily WHERE {' AND '.join(where)}", params
+        f"SELECT security_id, date, open, high, low, close, vwap, volume FROM bars_daily WHERE {' AND '.join(where)}", params
     ).df()
     bars["date"] = pd.to_datetime(bars["date"])
     wide = {field: bars.pivot(index="date", columns="security_id", values=field).sort_index() for field in PRICE_FIELDS}
@@ -102,5 +103,6 @@ def load_panel(
     return Panel(
         close=adjusted["close"], open=adjusted["open"], high=adjusted["high"], low=adjusted["low"],
         vwap=adjusted["vwap"], raw_close=wide["close"],
+        volume=bars.pivot(index="date", columns="security_id", values="volume").sort_index().reindex(columns=columns),
         tr=total_return_index(adjusted["close"], dividends, factor), split_factor=factor,
     )

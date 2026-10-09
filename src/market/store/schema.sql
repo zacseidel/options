@@ -124,3 +124,54 @@ CREATE TABLE IF NOT EXISTS market_caps (
     shares        DOUBLE,
     PRIMARY KEY (security_id, date)
 );
+
+-- ------------------------------------------------------------------ categories & evaluation
+-- One row per (category, report date, security): the ranked list as of that report.
+CREATE TABLE IF NOT EXISTS category_snapshots (
+    category_id   VARCHAR NOT NULL,
+    report_date   DATE NOT NULL,           -- signals are known before this session opens
+    as_of         DATE NOT NULL,           -- last session whose data was used
+    security_id   VARCHAR NOT NULL,
+    ticker        VARCHAR,                 -- ticker as of the report (display)
+    rank          INTEGER NOT NULL,
+    score         DOUBLE,
+    features      JSON,
+    origin        VARCHAR NOT NULL,        -- 'backtest' | 'live' | 'legacy'
+    version       VARCHAR NOT NULL,
+    PRIMARY KEY (category_id, report_date, security_id, origin)
+);
+
+CREATE TABLE IF NOT EXISTS trades (
+    strategy_id       VARCHAR NOT NULL,
+    trade_id          VARCHAR NOT NULL,
+    security_id       VARCHAR NOT NULL,
+    ticker            VARCHAR,
+    signal_date       DATE NOT NULL,
+    entry_date        DATE NOT NULL,
+    entry_price       DOUBLE NOT NULL,     -- split-adjusted fill
+    exit_signal_date  DATE,
+    exit_date         DATE,
+    exit_price        DOUBLE,
+    exit_reason       VARCHAR,
+    return_price      DOUBLE,              -- price return of the trade (fraction)
+    return_total      DOUBLE,              -- incl. dividends
+    status            VARCHAR NOT NULL,    -- 'open' | 'closed'
+    PRIMARY KEY (strategy_id, trade_id)
+);
+
+CREATE TABLE IF NOT EXISTS nav_daily (
+    strategy_id   VARCHAR NOT NULL,
+    date          DATE NOT NULL,
+    nav           DOUBLE NOT NULL,         -- total-return basis, starts at 100
+    nav_price     DOUBLE NOT NULL,         -- price-return basis
+    positions     INTEGER NOT NULL,
+    PRIMARY KEY (strategy_id, date)
+);
+
+CREATE TABLE IF NOT EXISTS strategy_metrics (
+    strategy_id   VARCHAR NOT NULL,
+    window_name   VARCHAR NOT NULL,        -- 'all', '3y', '1y', 'ytd', ...
+    metrics       JSON NOT NULL,
+    computed_at   TIMESTAMP NOT NULL,
+    PRIMARY KEY (strategy_id, window_name)
+);

@@ -54,3 +54,9 @@ options:
   liquidity:
     min_volume: 10
     min_transactions: 3
+
+evaluation:
+  risk_free_rate: 0.04          # annual, for Sharpe/Sortino and alpha
+  kelly_min_closed_trades: 20
+  benchmarks: [SPY, MDY, QQQ]
+  windows: {all: null, 3y: 3, 1y: 1}
