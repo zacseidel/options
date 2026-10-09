@@ -1,0 +1,371 @@
+# Plan — unified stock & options research system
+
+Draft 2 · 2026-10-08 · inputs: `docs/reviews/01-momentum.md`, `02-eval.md`, `03-smartmoney.md`
+Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions are in §13.
+
+---
+
+## 0. Decisions so far
+
+| # | Decision |
+|---|---|
+| D1 | Runs on the local Mac via launchd; the built site is pushed to GitHub Pages |
+| D2 | The main update script runs **daily** and covers market data, Congress, 13F, categories, methods, evaluation and the site |
+| D3 | Congress and 13F data come from smartmoney's ledgers first; its fetchers get ported later |
+| D4 | Historical S&P 500/400 membership is rebuilt from Wikipedia's change tables |
+| D5 | Python package `market`, GitHub repo `zacseidel/options` |
+| D6 | Efficiency is a design constraint: each piece of historical data is fetched once, no large raw stores, incremental daily work |
+
+---
+
+## 1. The model
+
+```
+Universe ─► Category ─► Slot ─► Hold rule ─► Instrument ─► Evaluation
+ (who)      (ranked      (which    (when we want   (how we get     (how well)
+            list/date)   ranks)    exposure)       exposure)
+                 ▲                 └──── Method ────┘
+           Sources (funds, members) scored as-of each date
+```
+
+| Concept | Definition | Examples |
+|---|---|---|
+| **Universe** | Point-in-time set of securities | all US common stock, S&P 500, S&P 400, top-N by market cap |
+| **Source** | Entity whose disclosures create signals, with an as-of skill score | 13F funds, members of Congress |
+| **Category** | Pure function `(as_of, panel, sources) → [security, rank, score, features]` | 12-mo momentum, rank momentum, Munger dip, mega-cap laggards, industry movers, top-fund new buys, Congress out-performer buys, convergence |
+| **Slot** | Which ranks to take | top 5 · ranks 6–10 · all signals · top 2 |
+| **Hold rule** | Turns category output into **exposure windows** (security, start, end) | while listed · leave-next-session · until close < EMA21 · until close > SMA10 · fixed 21 sessions (stacked lots) |
+| **Instrument** | Turns each exposure window into trades and legs | long stock · cash-secured put · covered call · LEAP call |
+| **Method** | Hold rule + Instrument | "while listed, via 30–45 DTE 0.25Δ puts" |
+| **Strategy** | Category × Slot × Method | `rankmom500 · top5 · leave-next · CSP(30-45, .25Δ, 50% take)` |
+
+**Why split hold rule from instrument:** a strategy's exposure windows are computed once and
+reused by every instrument. Adding CSP / CC / LEAP to an existing strategy then needs no new
+signal work, just the option legs for windows that already exist.
+
+---
+
+## 2. Point-in-time and fill rules (enforced by tests)
+
+1. Every input row carries `available_at`. A category at `as_of` sees only rows with
+   `available_at ≤ as_of`. Daily bars become available after the close. Disclosures become
+   available at their filing or disclosure time.
+2. Source skill is recomputed **as of** each date from earlier filings only, which removes
+   smartmoney's look-ahead.
+3. **Stock fills:** a signal known after the close of day D fills on the next session at VWAP,
+   falling back to mid(open, close). Technical exits are decided on a completed close and filled
+   the next session.
+4. **Option fills:** the next session's mid(open, close) from the option day bar, with a
+   **spread haircut**: sell at mid × (1 − h), buy at mid × (1 + h). There are no historical quotes
+   on 15-min-delayed plans. ▸ DEFAULT h = max(3 %, $0.05 / mid), widened for DTE > 180 or |Δ| < 0.15.
+   Every options result is also shown at 0× and 2× haircut. Live snapshots record bid/ask when
+   available so h can be calibrated over time.
+5. **Total return:** store unadjusted bars plus splits and dividends, adjust on read with a small
+   cumulative-factor table, and credit dividends on stock legs.
+6. Securities are keyed by `security_id` (FIGI-based), with `ticker_history` mapping tickers to
+   dates. This handles reused and renamed tickers.
+
+---
+
+## 3. Data sources & call budget
+
+Polygon (Massive) facts used in this design:
+- **Stocks:** grouped daily returns every US stock's OHLCV + VWAP in **one call per session**.
+- **Options flat files:** one CSV.gz per session covering the whole US options market (ticker,
+  OHLC, volume, transactions; no VWAP, no OI), about 1.5–3 MB per day, published around 11:00 ET
+  the next day. History is **2 yr on Starter, 4 yr on Developer, 5+ yr on Advanced**. Historical
+  quotes are Advanced-only.
+- **Option snapshot by underlying:** today's chain with greeks, IV, OI and day bar, 15-min delayed.
+- An option ticker can be computed from its terms (`O:AAPL261120P00150000`), so contract lists
+  are needed only for discovery.
+
+### 3a. One-time backfill
+| Data | Method | Calls / downloads | Kept |
+|---|---|---|---|
+| Stock bars, 5 yr | grouped daily, `adjusted=false` | ~1,260 calls | all common stock + benchmark ETFs |
+| Splits, dividends | reference endpoints, paginated | ~50 calls | all |
+| Ticker events and details | only securities that were ever in a tracked universe | ~2,000 calls | compact `securities`, `ticker_history`, `company_meta` |
+| Shares outstanding history (for point-in-time market cap) | SEC company-facts, one call per company with full history | ~1,200 | quarterly rows |
+| S&P 500/400 membership history | Wikipedia lists + change tables | 2 pages | membership intervals |
+| Options history | flat files, one per session, **streamed and filtered, never stored raw** | 500 (Starter) to 1,000 (Developer) files, ~1–3 GB transferred once | filtered option panel (§4) |
+| Congress, 13F | smartmoney ledgers, local file read | 0 | normalized tables |
+
+### 3b. Daily run
+| Data | Calls |
+|---|---|
+| Grouped daily for any session not yet stored (fills gaps on its own) | 1 |
+| Splits and dividends since the last checkpoint | 2 |
+| New tickers or ticker events (only for securities not seen before) | 0–10 |
+| SSGA SPY + MDY holdings | 2 downloads |
+| Wikipedia S&P lists (weekly, or whenever SSGA shows a change) | 0–2 |
+| Previous session's options flat file, streamed and filtered | 1 download |
+| Option snapshots, **one per underlying** with open option legs, new entries today, or live candidates | ~50–200 |
+| News, only for tickers new to a report, cached 14 days | ~0–40 |
+| T-bill rate (FRED DTB3) for Black-Scholes and cash yield | 1 |
+| Congress: smartmoney's incremental House/Senate fetch, then ledger import if it changed | a few, polite |
+| 13F: EDGAR daily form index; pull filings only for new 13F-HR from candidate funds | 1 + new filings |
+| **Total** | **~60–260 calls/day**, nearly all for option snapshots |
+
+**No-refetch rule:** a `fetch_log(source, key, coverage, fetched_at)` table records what has been
+fetched. Closed sessions, expired contracts and completed filings are immutable and are never
+requested again. Snapshot calls are de-duplicated per underlying per run.
+
+---
+
+## 4. Storage
+
+**One DuckDB file**, `data/market.duckdb`, plus a small `data/state/` directory. Nothing goes in
+git. There is no raw-response archive: flat files and API payloads are parsed in a stream and
+discarded.
+
+| Table | What | Est. size |
+|---|---|---|
+| `bars_daily` | unadjusted OHLCV + VWAP, all common stock, 5 yr (~7 M rows) | ~120 MB |
+| `splits`, `dividends`, `adj_factors` | corporate actions + cumulative factors | <5 MB |
+| `securities`, `ticker_history`, `company_meta`, `shares_history` | reference | <10 MB |
+| `calendar` | sessions, early closes (from grouped daily + Polygon holidays) | tiny |
+| `universe_membership`, `universe_weights` | intervals; SSGA weights only on change days | <5 MB |
+| `option_bars` | **filtered option panel**: option universe × bands below | ~50–150 MB |
+| `option_marks` | daily snapshot marks for contracts we hold or show (bid/ask/IV/Δ/OI) | <5 MB |
+| `congress_trades`, `f13_filings`, `f13_holdings`, `entities`, `entity_scores` | sources | ~20 MB |
+| `category_snapshots` | top-K per category per date (K = max(slot) + 15, e.g. 25), not the whole universe | ~20 MB |
+| `events` | disclosures, 13F changes, universe adds/drops, trade opens/closes | <5 MB |
+| `windows`, `trades`, `legs`, `nav_daily`, `metrics` | evaluation outputs | ~20 MB |
+| `runs`, `fetch_log`, `versions` | operations | tiny |
+| **Total** | | **~300 MB** |
+
+**Option panel filter.** A row from the daily options file is kept only if all of these hold:
+- its underlying is in the **option universe**: S&P 500 + S&P 400 members plus any security ever
+  in a category that feeds an option strategy, about 1,000 names;
+- `1 ≤ DTE ≤ 800`;
+- the strike is inside the method bands: puts 60–105 % of spot, calls 95–140 % of spot, and LEAP
+  calls 40–100 % of spot when DTE > 240.
+
+Storing this filtered panel, not just the contracts we chose, means a **new option variant (other
+delta or DTE) needs no new downloads**. Changing the bands needs a one-time re-stream (about 1–3 GB).
+The filter is defined in config and the probe in §11 measures its real size.
+
+**Site output:** a few MB of JSON, regenerated each run and force-pushed as a single commit to
+`gh-pages`, so there's no history. Only the files that changed are rewritten.
+
+---
+
+## 5. Universes
+
+| Universe | Point-in-time source |
+|---|---|
+| `us_common` | `securities` where type = CS and the security traded that session; survivorship-free |
+| `sp500`, `sp400` | Wikipedia change tables replayed backward from today's SSGA list, then matched to `security_id` through `ticker_history` (handles BRK.B / BRK-B and renames). The S&P 400 page's change history is thinner, so a coverage report is built and gaps are flagged in the UI. |
+| `megacap25`, `top50` | point-in-time market cap = adjusted close × shares outstanding (SEC facts), ranked within `sp500`; GOOG/GOOGL combined. SSGA weights are used for live dates. |
+| `sp400_large15` | top 15 % of `sp400` by market cap (replaces MDY weight historically) |
+
+---
+
+## 6. Categories (initial registry)
+
+Each category is a module with `@category(id, group, universe, version)` and
+`compute(ctx) → DataFrame`. All categories in a run share **one in-memory adjusted price panel**,
+loaded once per run. The old repos re-queried prices separately for each cohort.
+
+| Group | Category | Rule (from the existing repos) |
+|---|---|---|
+| Momentum | `mom12_{megacap,sp500,sp400}` | 12-mo return rank, rank ≤ rank one month ago |
+| Momentum | `rankmom_{sp500,sp400}` | best average of 3/6/12-mo ranks |
+| Momentum | `stall_flag` (overlay) | no new 60-session high for >15 sessions; isolated vs broad |
+| Reversion | `laggards_mega10` | worst average 3/6/12-mo rank of the 10 largest |
+| Reversion | `munger_top50`, `munger400l`, `munger400r` | close < SMA200 in the last 10 sessions and close > SMA10 |
+| Industry | `industry_up`, `industry_down`, `industry_groups` | SIC-2 cap-weighted 12-mo return; largest stock rank changes |
+| Smart money | `fund_new_buys` | Σ max(alpha,0) × hit-rate × position/book over top as-of funds |
+| Smart money | `fund_curated_{watchlist,healthcare}` | holdings of pinned funds |
+| Smart money | `congress_outperformer_buys` | purchases by as-of top-quartile members in the last N days |
+| Smart money | `congress_regulated_bets` | cap × committee × consensus composite |
+| Smart money | `convergence` | new buys by both top funds and top members |
+
+Event-driven categories, the smart-money ones, are evaluated as of their **disclosure** dates.
+
+---
+
+## 7. Methods
+
+### 7a. Hold rules (exposure windows)
+| Rule | Params | Behaviour |
+|---|---|---|
+| `while_listed` | — | open on the first listing while flat; close at the first report without it |
+| `leave_next_session` | — | as above, but sell the session after the dropping report; relisting before then cancels the sale |
+| `price_exit` | indicator (EMA21, SMA10), direction | exit the session after a qualifying close |
+| `fixed_hold` | N sessions, `stack` | each listing opens its own lot |
+| `rebalance_on` | report days | ▸ DEFAULT Tue/Fri, the same cadence as the current live record; daily is available as a variant |
+
+### 7b. Instruments
+| Instrument | Entry inside a window | Management | Window ends | Capital & return basis |
+|---|---|---|---|---|
+| `stock` | buy at window start | dividends credited | sell | cost |
+| `csp` | sell put: DTE in [30, 45], target Δ −0.25 | buy back at 50 % profit; at expiry, if still in window, sell the next put | ▸ DEFAULT let the open put run to expiry, no new puts (alt: buy back) | collateral = strike × 100; idle collateral earns the T-bill rate |
+| `csp → assignment` | — | ▸ DEFAULT assigned shares are held until window end, then sold (alt: sell next session; alt: wheel into covered calls) | — | — |
+| `covered_call` | buy 100 sh + sell call, DTE [30, 45], Δ 0.30 | roll at expiry while in window; called away → re-buy the next session if still in window | sell stock, buy back call | stock cost |
+| `leap` | buy call, DTE ≥ 365 (prefer ~540), Δ 0.80 | roll when DTE < 180 | sell call | premium paid; also reports stock-equivalent exposure |
+
+**Contract selection.** On the entry date, read candidates from `option_bars` (the traded
+contracts in band). Compute IV and Δ with Black-Scholes using the T-bill rate and dividend yield.
+Choose the contract closest to the target Δ that has volume ≥ ▸ 10 and transactions ≥ ▸ 3. If none
+qualifies, skip the leg and record why. Live entries use the snapshot's own greeks.
+
+**Assignment model.** Puts and calls are settled at expiry against the underlying's close. Early
+assignment is modelled only for covered calls deep in the money just before an ex-dividend date
+(extrinsic value < dividend).
+
+**Options history limit.** Option methods can only be backtested over the options-plan window: 2
+years on Starter, 4 on Developer. Earlier periods show stock-only results, and the UI marks where
+options history begins.
+
+### 7c. Live method view ("what would each method do today")
+For current members of each displayed category slot, the evening run reads one snapshot per
+underlying. It shows the contract each instrument would choose: premium, annualized yield on
+collateral, breakeven, Δ, IV, OI and bid/ask. These rows are kept in `option_marks` only for
+contracts that are opened or displayed.
+
+---
+
+## 8. Evaluation
+
+- Engine pipeline: `windows(strategy) → trades/legs(instrument) → nav_daily → metrics`.
+- **Incremental:** the daily run advances live windows, trades and NAV by one session. Full
+  backtests rerun only for strategies whose `version` hash changed (category code or params, hold
+  rule, instrument params, haircut), and only that strategy's downstream rows are rebuilt.
+- **Modes:** `backtest`, computed from history and rebuildable, and `live`, the as-published record
+  that is never rewritten. Legacy momentum picks and eval trades since Jan 2026 are imported as
+  `live` to continue the record.
+- **Metrics:**
+  - returns: 12M, 3M, since inception, and CAGR, all vs SPY
+  - Sharpe (log returns, T-bill rate), Sortino, max drawdown, time underwater
+  - trade stats: win %, payoff ratio, half-Kelly (≥ 20 closed trades), independent-run count for stacked lots
+  - options: return on capital, annualized yield, assignment rate, capture vs the same windows in stock, haircut sensitivity (0×/1×/2×)
+- **Portfolio policy:** equal weight per open window, rebalanced on event days (as in eval). For
+  options instruments, equal *capital* per window.
+- **Validators** (ported from eval) run on every build: unique ids, every trade traces to a
+  signal, no weekend or future dates, exit after entry, technical exits actually triggered, no
+  overlapping windows except stacked lots, and option legs that expire on real expiry dates.
+
+**Strategy grid** (`strategies.yaml`). Explicit lists plus small grids, for example
+`categories: [mom12_sp500, rankmom_sp500] × slots: [top5, next5] × methods: [stock, csp_std, leap_std]`.
+Each strategy has `visible: true|false`. Hidden variants keep being evaluated.
+
+---
+
+## 9. Reports & change tracking
+
+- A **report** is the `live` category snapshots for a date. No HTML or charts are stored per date.
+- **Diffs are derived when needed** for any two dates: adds, drops, rank moves, score changes, and
+  the events in between (new Congress trades, 13F new, increased, decreased or exited positions,
+  universe changes, strategy trades opened or closed, assignments).
+- Published snapshots are immutable. Backtest snapshots carry a category `version`.
+- Every source sits on one timeline: momentum report days, Congress disclosure batches, and 13F
+  waves (diff = quarter over quarter, for each fund and across all funds).
+- ▸ DEFAULT: categories are computed and stored daily, reports are *published* Tue/Fri, and the UI
+  can compare any two stored dates.
+
+---
+
+## 10. Site & navigation
+
+A static single-page app (vanilla JS + Chart.js, no build step) with hash routes. Each route loads
+one small JSON file.
+
+```
+Today       #/                     changes since last report · new disclosures · pending exits & expiring legs ·
+                                   strategy leaders · market strip
+Reports     #/reports              timeline (momentum, Congress batches, 13F waves)
+            #/report/D             every category on D, ▲▼ new/dropped vs the previous report
+            #/compare/D1/D2        diff any two dates
+Categories  #/categories           groups: Momentum · Reversion · Industry · Smart money · Convergence
+            #/category/ID          current list + live method view · membership timeline · strategies using it
+Strategies  #/strategies           matrix: category×slot rows × instrument columns, cell = chosen metric;
+                                   filters: universe, hold rule, live|backtest, hidden variants, haircut
+            #/strategy/ID          NAV vs SPY & vs same-signal stock, rolling 3M, drawdown, metrics, trades/legs, rules
+Stocks      #/stock/T              chart + MA dots · category history · fund holders & changes · Congress trades ·
+                                   option candidates (live) · news · financials
+Sources     #/funds  #/fund/CIK    as-of leaderboard · holdings by quarter with changes
+            #/members #/member/ID  leaderboard · trades · committees
+Portfolio   #/portfolio            personal positions graded with the same metrics
+About       #/methodology          rules, fills, haircut, data coverage (options history start, S&P 400 gaps)
+```
+
+Every ticker, category, strategy, fund and member is a link.
+
+**Export:** `index.json`, `reports/D.json`, `categories/ID.json`, `strategies/ID.json`,
+`stocks/T.json` (only tickers that have been in a category in the last 2 years; 1-yr compact bars),
+`funds/CIK.json` (top-N and pinned only), `members/ID.json`.
+
+---
+
+## 11. Code layout & daily run
+
+```
+pyproject.toml   config.yaml   strategies.yaml
+src/market/
+  data/        polygon.py (async, retries, no throttle) · flatfiles.py (S3 stream + filter) · calendar.py
+               securities.py · bars.py · corpactions.py · universe_ssga.py · universe_wiki.py
+               shares_sec.py · options.py (panel, snapshot, BS greeks) · rates.py · ledgers_smartmoney.py
+  store/       schema.sql · db.py · panel.py · fetch_log.py
+  categories/  registry.py · momentum.py · rankmom.py · laggards.py · munger.py · industry.py
+               funds.py · congress.py · convergence.py
+  sources/     fund_scores.py · member_scores.py
+  methods/     hold_rules.py · instruments/{stock,csp,covered_call,leap}.py · select_contract.py · fills.py
+  evaluate/    engine.py · portfolio.py · metrics.py · validate.py · versions.py
+  reports/     snapshot.py · diff.py · export.py
+  ops/         run.py · probe.py · publish.py
+site/          index.html · js/ · css/
+ops/launchd/   com.zacseidel.market.daily.plist · run.sh
+tests/
+```
+
+**Daily run** (`run.py`, every step idempotent and incremental):
+1. Preflight: API key, push credentials, disk space, DB lock.
+2. Calendar: list sessions not yet stored. If there are none, run only steps 5, 9 and 10.
+3. Market data: grouped daily for missing sessions → corporate actions → adjustment factors.
+4. Options: stream any options flat files not yet loaded (previous session) into `option_bars`.
+5. Reference & sources: SSGA → membership changes (→ Wikipedia refresh if changed); new-ticker
+   details; Congress incremental fetch + ledger import; EDGAR daily index → new 13F filings →
+   update entity scores for affected entities only.
+6. Categories: load the panel once and compute today's snapshots.
+7. Methods: advance live windows; collect the underlyings that need snapshots (open legs, entries,
+   live view); one snapshot each; open, roll or close legs.
+8. Evaluation: append NAV and metrics. Rebuild any strategies whose versions changed (can be
+   skipped with `--no-rebuild`).
+9. Reports: on publish days, freeze today's snapshot as the report.
+10. Export the changed JSON → force-push `gh-pages` → write the `runs` row → macOS notification on
+    failure.
+
+**Schedule** (launchd, weekdays): 17:30 MT, catch-ups at 20:30 MT and 07:00 MT the next day.
+`run.sh` skips on battery, keeps a per-session success stamp, logs to `~/Library/Logs/market/`
+(90-day retention), and supports `--force`, `--dry-run`, `--as-of D` and `--only step`. Weekends:
+one Saturday run for disclosures only.
+
+---
+
+## 12. Build phases
+
+| Phase | Deliverable | Done when |
+|---|---|---|
+| **0 Setup & probe** | repo, pyproject, config; `probe.py` checks entitlements (stock history depth, grouped VWAP, options flat-file access and depth, snapshot greeks, bid/ask in snapshot) and **measures the option-panel size** for 1 month | plan tiers and storage numbers confirmed |
+| **1 Data foundation** | calendar, securities, 5-yr bars, corporate actions, SSGA + Wikipedia membership, SEC shares, smartmoney ledger import | point-in-time panel tests; adjusted closes match Polygon `adjusted=true` on spot checks; membership coverage report |
+| **2 Categories** | momentum, reversion and industry categories as pure functions; snapshots; legacy import | **parity** with momentum's `top10_*` tables on shared dates |
+| **3 Evaluation: stock** | hold rules, stock instrument, engine, NAV, metrics, validators, versioned incremental rebuilds | **parity** with eval's `positions.json` and NAV for 2026; 5-yr stock backtests |
+| **4 Options** | option panel backfill, BS greeks, contract selection, CSP / CC / LEAP instruments, live method view | hand-checked sample trades; haircut sensitivity reported |
+| **5 Reports, site, ops** | snapshots→reports→diffs, full navigation, export, gh-pages, launchd | runs unattended for 2 weeks alongside the old sites, then momentum + eval Actions are retired |
+| **6 Smart money** | as-of fund and member scores; fund, Congress and convergence categories; Sources pages; 13F wave reports | no look-ahead (tested); per-report changes visible |
+| **7 Consolidation** | port smartmoney fetchers (incl. OCR) and pages; optional intraday "live" refresh command | smartmoney retired |
+
+---
+
+## 13. Open questions
+
+1. **Options plan tier:** Starter (2 yr) or Developer (4 yr)? This sets how far back option
+   backtests go. The probe will confirm either way.
+2. **Option universe size:** S&P 500 + 400 + category names, about 1,000 underlyings, or S&P 500
+   + category names only? Fewer names means a smaller panel and fewer snapshots.
+3. **CSP behaviour at window end:** let the put run to expiry (default) or buy it back?
+   **Assignment:** hold until window end (default), sell the next session, or wheel?
+4. **Report publish days:** Tue/Fri (default) or daily?
+5. **Smartmoney during the transition:** keep its weekly launchd job, and have our daily run call
+   only its incremental Congress fetch? Or move all its scheduling under our runner now?
