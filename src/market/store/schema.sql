@@ -33,12 +33,15 @@ CREATE TABLE IF NOT EXISTS securities (
     delist_date   DATE
 );
 
+-- Which security used a ticker when. Several rows may cover the same (ticker, date); the
+-- lowest priority wins: 1 = ticker-change events / current ticker, 2 = other tickers observed
+-- for the same FIGI, 3 = synthetic stand-in for an index member Polygon has no record of.
 CREATE TABLE IF NOT EXISTS ticker_history (
     security_id   VARCHAR NOT NULL,
     ticker        VARCHAR NOT NULL,
     valid_from    DATE NOT NULL,
     valid_to      DATE,                    -- exclusive; NULL = current
-    PRIMARY KEY (security_id, valid_from)
+    priority      TINYINT NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS calendar (
@@ -78,4 +81,46 @@ CREATE TABLE IF NOT EXISTS universe_weights (
     name          VARCHAR,
     weight        DOUBLE,
     PRIMARY KEY (universe, date, ticker)
+);
+
+-- ------------------------------------------------------------------ migrations (idempotent)
+ALTER TABLE securities ADD COLUMN IF NOT EXISTS cik VARCHAR;
+
+-- ------------------------------------------------------------------ market data
+CREATE TABLE IF NOT EXISTS bars_daily (
+    security_id   VARCHAR NOT NULL,
+    date          DATE NOT NULL,
+    open          DOUBLE,
+    high          DOUBLE,
+    low           DOUBLE,
+    close         DOUBLE NOT NULL,
+    volume        DOUBLE,
+    vwap          DOUBLE,
+    PRIMARY KEY (security_id, date)
+);                                         -- unadjusted; adjust on read (PLAN §2.5)
+
+CREATE TABLE IF NOT EXISTS splits (
+    security_id   VARCHAR NOT NULL,
+    ex_date       DATE NOT NULL,
+    split_from    DOUBLE NOT NULL,
+    split_to      DOUBLE NOT NULL,
+    PRIMARY KEY (security_id, ex_date)
+);
+
+CREATE TABLE IF NOT EXISTS dividends (
+    security_id   VARCHAR NOT NULL,
+    ex_date       DATE NOT NULL,
+    pay_date      DATE,
+    amount        DOUBLE NOT NULL,
+    kind          VARCHAR,                 -- CD regular, SC special, ...
+    PRIMARY KEY (security_id, ex_date, kind)
+);
+
+-- Point-in-time company market cap (quarterly), scaled daily by adjusted price for ranking.
+CREATE TABLE IF NOT EXISTS market_caps (
+    security_id   VARCHAR NOT NULL,
+    date          DATE NOT NULL,
+    market_cap    DOUBLE,
+    shares        DOUBLE,
+    PRIMARY KEY (security_id, date)
 );

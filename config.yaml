@@ -17,6 +17,16 @@ polygon:
 
 benchmark: SPY
 
+# Stock data is stored only for securities that were members of these universes at any time in
+# the history window, plus watchlists and benchmarks (not the whole ~12k-ticker market).
+tracked:
+  universes: [sp500, sp400]
+  watchlists: true
+  benchmarks: [SPY, MDY, QQQ]
+  # Old ticker → current ticker, for renames Polygon's reference data doesn't link.
+  ticker_aliases:
+    WLTW: WTW
+
 options:
   # Options are gathered only for a select set of underlyings (decision D8). Each one costs
   # ~0.5 KB/day in the panel (~0.35 MB per 2 years), measured 2026-10-09.

@@ -2,7 +2,7 @@ from datetime import date
 
 import pandas as pd
 
-from market.data.universe_wiki import clean_ticker, members_on, replay
+from market.data.universe_wiki import clean_ticker, clean_tickers, members_on, replay
 
 
 def changes(rows):
@@ -48,3 +48,8 @@ def test_inconsistent_events_are_reported_not_fatal():
 def test_clean_ticker_strips_footnotes():
     assert clean_ticker(" brk.b[4] ") == "BRK.B"
     assert clean_ticker(float("nan")) is None
+
+
+def test_clean_tickers_splits_share_classes_and_drops_notes():
+    assert clean_tickers("UA/UAA") == ["UA", "UAA"]
+    assert clean_tickers("VSCO (NOW VSXY)") == ["VSCO"]
