@@ -48,13 +48,13 @@ function table(columns, rows, { sortKey, desc = true, rowClass, compact } = {}) 
       return (va > vb ? 1 : va < vb ? -1 : 0) * (down ? -1 : 1);
     }) : rows;
     const head = h("tr", {}, columns.map((c) => {
-      const th = h("th", { class: `${c.num ? "num " : ""}${c.nosort ? "" : "sortable"}`, title: c.title }, c.label,
+      const th = h("th", { class: `${c.num ? "num " : ""}${c.nosort ? "" : "sortable"}${c.hideNarrow ? " hide-narrow" : ""}`, title: c.title }, c.label,
         c.key === key ? h("span", { class: "arrow" }, down ? "▼" : "▲") : null);
       if (!c.nosort) th.addEventListener("click", () => { down = key === c.key ? !down : true; key = c.key; render(); });
       return th;
     }));
     const body = sorted.map((r) => h("tr", { class: rowClass ? rowClass(r) : null },
-      columns.map((c) => h("td", { class: `${c.num ? "num " : ""}${c.cls ? c.cls(r) : ""}` }, c.render ? c.render(r) : r[c.key] ?? "—"))));
+      columns.map((c) => h("td", { class: `${c.num ? "num " : ""}${c.cls ? c.cls(r) : ""}${c.hideNarrow ? " hide-narrow" : ""}` }, c.render ? c.render(r) : r[c.key] ?? "—"))));
     wrap.appendChild(h("table", { class: compact ? "table-compact" : null }, h("thead", {}, head), h("tbody", {}, body)));
   };
   render();
@@ -119,7 +119,9 @@ function changeBadge(r, hasPrev) {
 const FEATURE_LABELS = {
   return_12m: ["12M", pct], return_1w: ["1W", (v) => pct(v, 1, true)], rank_change: ["Rank Δ (1M)", (v) => (v == null ? "—" : (v > 0 ? "+" : "") + v)],
   return_3m: ["3M", pct], return_6m: ["6M", pct], avg_rank: ["Avg rank", (v) => num(v, 1)],
-  pct_vs_sma200: ["vs SMA200", (v) => pct(v, 1, true)], dip_date: ["Dipped", (v) => v], market_cap: ["Mkt cap", money],
+  pct_vs_sma200: ["vs SMA200", (v) => pct(v, 1, true)],
+  dip_date: ["Dipped", (v) => (v ? new Date(v + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—")],
+  market_cap: ["Mkt cap", money],
 };
 
 function reportTable(cat, report, { compact = false, limit } = {}) {
@@ -135,7 +137,7 @@ function reportTable(cat, report, { compact = false, limit } = {}) {
     })),
     { key: "chg", label: "vs prior", nosort: true, render: (r) => changeBadge(r, hasPrev) },
   ];
-  return table(cols, rows, { sortKey: "rank", desc: false, compact });
+  return table(cols, rows, { sortKey: "rank", desc: false, compact: true });
 }
 
 function droppedLine(report) {
@@ -159,8 +161,8 @@ async function overview(root) {
     const rows = META.strategies.filter((s) => s.visible).map((s) => ({ ...s, m: s.metrics[w] || {} }));
     const bench = Object.entries(META.benchmarks).map(([t, m]) => ({ id: `bench.${t}`, name: `${t} (benchmark)`, bench: true, m: m[w] || {}, holdings: [] }));
     const cols = [
-      { key: "name", label: "Strategy", sort: (r) => r.name, render: (r) => r.bench ? r.name : h("a", { href: `#/strategy/${r.id}` }, r.name) },
-      { key: "spark", label: "", nosort: true, render: (r) => r.spark ? sparkline(r.spark, { color: css("--series-1") }) : "" },
+      { key: "name", label: "Strategy", sort: (r) => r.name, cls: () => "name-col", render: (r) => r.bench ? r.name : h("a", { href: `#/strategy/${r.id}` }, r.name) },
+      { key: "spark", label: "", nosort: true, hideNarrow: true, render: (r) => r.spark ? sparkline(r.spark, { color: css("--series-1") }) : "" },
       { key: "cagr", label: "CAGR", num: true, sort: (r) => r.m.cagr, cls: (r) => cls(r.m.cagr), render: (r) => pct(r.m.cagr) },
       { key: "excess", label: "vs SPY", num: true, title: "CAGR minus SPY's CAGR over the same window", sort: (r) => r.m.excess_cagr, cls: (r) => cls(r.m.excess_cagr), render: (r) => pct(r.m.excess_cagr, 1, true) },
       { key: "total", label: "Total", num: true, sort: (r) => r.m.total_return, render: (r) => pct(r.m.total_return, 0) },
@@ -168,7 +170,7 @@ async function overview(root) {
       { key: "dd", label: "Max DD", num: true, sort: (r) => r.m.max_drawdown, render: (r) => pct(r.m.max_drawdown, 0) },
       { key: "win", label: "Win %", num: true, sort: (r) => r.metrics?.all?.win_rate, render: (r) => r.bench ? "" : pct(r.metrics.all.win_rate, 0) },
       { key: "trades", label: "Trades", num: true, sort: (r) => r.metrics?.all?.closed_trades, render: (r) => r.bench ? "" : r.metrics.all.closed_trades },
-      { key: "hold", label: "Holding now", nosort: true, render: (r) => h("span", {}, (r.holdings || []).slice(0, 6).map((k) => h("span", { class: "chip link" }, stockLink(k)))) },
+      { key: "hold", label: "Holding now", nosort: true, cls: () => "nowrap", render: (r) => h("span", {}, (r.holdings || []).slice(0, 6).map((k) => h("span", { class: "chip link" }, stockLink(k)))) },
     ];
     body.appendChild(table(cols, [...rows, ...bench], { sortKey: "cagr", rowClass: (r) => (r.bench ? "bench" : null) }));
     body.appendChild(h("p", { class: "muted small" }, w === "all"
@@ -401,7 +403,7 @@ async function stockPage(root, key) {
   const holder = h("div");
   chartBox.appendChild(holder);
   root.appendChild(chartBox);
-  lineChart(holder, { dates, series: [{ name: s.ticker, values: s.close, color: css("--series-1") }], height: 300, markers, format: (v) => v.toFixed(v < 10 ? 2 : 0) });
+  lineChart(holder, { dates, series: [{ name: s.ticker, values: s.close, color: css("--series-1") }], height: 300, markers, format: (v) => (v > 0 && v < 10 ? v.toFixed(2) : v.toFixed(0)) });
 
   const cats = Object.entries(s.categories).map(([id, apps]) => ({ id, name: catOf(id)?.name || id, n: apps.length, first: apps[0][0], last: apps[apps.length - 1][0], best: Math.min(...apps.map((a) => a[1])) }));
   root.append(h("h2", {}, "Category history"), cats.length ? table([

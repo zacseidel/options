@@ -65,7 +65,7 @@ header.top {
 }
 header.top .bar { display: flex; align-items: center; gap: 18px; max-width: 1180px; margin: 0 auto; padding: 10px 16px; }
 .brand { font-weight: 700; color: var(--ink); white-space: nowrap; }
-nav.main { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; }
+nav.main { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
 nav.main a { color: var(--ink-2); padding: 6px 10px; border-radius: 8px; white-space: nowrap; }
 nav.main a:hover { background: var(--surface-2); text-decoration: none; }
 nav.main a.here { color: var(--ink); background: var(--surface-2); font-weight: 600; }
@@ -83,6 +83,7 @@ nav.main a.here { color: var(--ink); background: var(--surface-2); font-weight: 
 button.theme { background: none; border: 1px solid var(--ring); color: var(--ink-2); border-radius: 8px; padding: 5px 9px; cursor: pointer; font: inherit; }
 main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 60px; }
 footer { max-width: 1180px; margin: 0 auto; padding: 0 16px 40px; color: var(--muted); font-size: 12px; }
+.page-head > * { min-width: 0; }
 .page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .lede { color: var(--ink-2); max-width: 760px; margin: 4px 0 0; }
 
@@ -118,6 +119,8 @@ th .arrow { color: var(--muted); font-size: 10px; margin-left: 3px; }
 tbody tr:hover td { background: var(--surface-2); }
 tr.bench td { color: var(--ink-2); background: var(--page); }
 td.ticker a { font-weight: 600; }
+td.name-col { min-width: 150px; }
+td.nowrap { white-space: nowrap; }
 .table-compact td, .table-compact th { padding: 6px 10px; }
 
 .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
@@ -176,7 +179,10 @@ td.ticker a { font-weight: 600; }
 
 @media (max-width: 760px) {
   header.top .bar { flex-wrap: wrap; gap: 8px; }
-  nav.main { order: 3; width: 100%; }
+  nav.main { order: 3; flex: 1 1 100%; }
+  .search { margin-left: auto; }
+  .hide-narrow { display: none; }
+  .lede { font-size: 13px; }
   .search input { width: 120px; }
   .report-layout { grid-template-columns: 1fr; }
   .date-list { max-height: 180px; }
