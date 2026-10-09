@@ -39,6 +39,8 @@ KEY_FEATURES = {
     "munger_top50": ["pct_vs_sma200", "dip_date", "market_cap"],
     "rankmom_sp500": ["avg_rank", "return_3m", "return_6m", "return_12m"],
     "rankmom_sp400": ["avg_rank", "return_3m", "return_6m", "return_12m"],
+    "rankfast_sp500": ["avg_rank", "return_1m", "return_3m", "return_6m"],
+    "rankfast_sp400": ["avg_rank", "return_1m", "return_3m", "return_6m"],
     "congress_buys": ["members", "dollars", "last_disclosed"],
     "congress_holdings": ["members", "dollars", "return_since"],
     "hedge_buys": ["funds", "top_funds", "value"],

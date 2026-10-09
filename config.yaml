@@ -32,8 +32,9 @@ options:
   # ~0.5 KB/day in the panel (~0.35 MB per 2 years), measured 2026-10-09.
   underlyings:
     watchlists: true                      # every watchlist with `options: true` (watchlists.yaml)
-    category_slots: []                    # e.g. [mom12_sp500.top5, rankmom_sp500.top5] — names entering
-                                          # these slots join the option set from that date
+    # Names entering these strategy slots join the option set from that date (D10: categories whose
+    # Sharpe beats SPY's). ~99 distinct names over the 2-year options window, measured 2026-10-09.
+    category_slots: [mom12_sp500.top5, rankmom_sp500.top5, mom12_megacap.top5, laggards_mega10.top2.hold21]
     max_underlyings: 200                  # hard cap; additions beyond it are refused and reported
   # Option panel (PLAN §4): rows from the daily OPRA day-aggregates file are kept only if they
   # fall inside a band. Contracts we hold that drift outside the bands are fetched per contract.

@@ -696,7 +696,7 @@ function methodologyPage(root) {
     h("h2", {}, "Metrics"),
     p("CAGR, total return, Sharpe and Sortino on daily log returns (4% risk-free), max drawdown, beta/alpha and correlation vs SPY, win rate, payoff ratio, and half-Kelly (0.5 × max(0, p − q/b), shown only with ≥20 closed trades). Half-Kelly is a historical capital-at-risk heuristic, not advice."),
     h("h2", {}, "Rank Momentum"),
-    p("Every index member is ranked on its 3-, 6- and 12-month return (1 = best); the list is the best average rank, ties to the stronger 12-month return."),
+    p("Every index member is ranked on its 3-, 6- and 12-month return (1 = best); the list is the best average rank, ties to the stronger 12-month return. Fast Rank Momentum is the same on 1-, 3- and 6-month returns, ties to the stronger 6-month return."),
     h("h2", {}, "Congress"),
     p("Periodic Transaction Reports (House Clerk and Senate eFD, including OCR'd paper filings) are checked daily. A member's skill is measured point-in-time over the trailing two years of disclosures: each purchase is bought at the close of the first session after it was disclosed and sold the session after the member discloses a sale of that name; open lots are marked at the report date. Dollar-weighted (range midpoint) alpha vs SPY; at least 5 purchases to rank."),
     p("Top-5 Buys: purchases disclosed in the last 120 days by the five best-ranked members, scored by each name's share of a member's recent buying, summed across members. Top-5 Holdings: names those members still hold (no sale disclosed), scored by share of each member's open book."),

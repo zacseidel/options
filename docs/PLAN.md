@@ -30,6 +30,10 @@ Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions ar
 | D7 | Plans: **Stocks Starter** (5-yr rolling history, 15-min delayed, reference, corporate actions, indicators) and **Options Starter** (2-yr history, 15-min delayed, greeks/IV/OI in snapshots, flat files). Probe results: `data/state/probe-2026-10-09.json` |
 | D8 | **Stocks are gathered broadly; options only for a select set of underlyings** (watchlists flagged `options: true` + names entering configured category slots, capped at 200) |
 | D9 | **Watchlists** (`watchlists.yaml`) are first-class universes alongside S&P 500/400 |
+| D10 | **Option set** = option watchlists + names entering `mom12_sp500.top5`, `rankmom_sp500.top5`, `mom12_megacap.top5`, `laggards_mega10.top2` (the categories whose Sharpe beats SPY's); ~99 names over 2 years |
+| D11 | **Option legs close when the stock would**: the same session the stock exit fills (report-driven exits). An open short put is bought back then, not left to run |
+| D12 | **Assigned puts**: shares are held until the name leaves the slot, then sold with the stock exit |
+| D13 | **Diagonal**: long call Δ 0.80, DTE ≥ 365 (prefer ~540) + short call Δ 0.30, DTE 30–45, short leg rolled at expiry; everything closes at window end |
 
 ---
 

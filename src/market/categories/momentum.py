@@ -100,18 +100,19 @@ def munger_top50(ctx: Context) -> pd.DataFrame:
     return frame.assign(score=frame["pct_vs_sma200"])
 
 
-def _rank_momentum(ctx: Context, ids: list[str]) -> pd.DataFrame:
-    """Best average rank of 3-, 6- and 12-month returns across the whole index (1 = best)."""
-    px = ctx.closes(ids, "now", "1w", "3m", "6m", "12m")
-    px = px.dropna(subset=["now", "3m", "6m", "12m"])
-    frame = pd.DataFrame({f"return_{p}": px["now"] / px[p] - 1 for p in ("3m", "6m", "12m")})
-    for p in ("3m", "6m", "12m"):
+def _rank_momentum(ctx: Context, ids: list[str], periods: tuple[str, ...] = ("3m", "6m", "12m")) -> pd.DataFrame:
+    """Best average rank of the given period returns across the whole index (1 = best)."""
+    px = ctx.closes(ids, "now", "1w", *periods)
+    px = px.dropna(subset=["now", *periods])
+    frame = pd.DataFrame({f"return_{p}": px["now"] / px[p] - 1 for p in periods})
+    for p in periods:
         frame[f"rank_{p}"] = frame[f"return_{p}"].rank(ascending=False, method="min")
-    frame["avg_rank"] = frame[["rank_3m", "rank_6m", "rank_12m"]].mean(axis=1)
+    frame["avg_rank"] = frame[[f"rank_{p}" for p in periods]].mean(axis=1)
     frame["return_1w"] = px["now"] / px["1w"] - 1
     frame["universe_size"] = float(len(frame))
-    # Best average rank first; the stronger 12-month return breaks ties.
-    frame = frame.sort_values(["avg_rank", "return_12m"], ascending=[True, False]).head(TOP_STORED)
+    # Best average rank first; the stronger longest-period return breaks ties.
+    longest = f"return_{periods[-1]}"
+    frame = frame.sort_values(["avg_rank", longest], ascending=[True, False]).head(TOP_STORED)
     return frame.assign(score=frame["avg_rank"])
 
 
@@ -127,3 +128,17 @@ def rankmom_sp500(ctx: Context) -> pd.DataFrame:
           lookback_sessions=260)
 def rankmom_sp400(ctx: Context) -> pd.DataFrame:
     return _rank_momentum(ctx, ctx.members("sp400"))
+
+
+@category("rankfast_sp500", "S&P 500 Fast Rank Momentum", "Momentum", "sp500",
+          "S&P 500 members with the best average rank of 1-, 3- and 6-month returns.",
+          lookback_sessions=135)
+def rankfast_sp500(ctx: Context) -> pd.DataFrame:
+    return _rank_momentum(ctx, ctx.members("sp500"), ("1m", "3m", "6m"))
+
+
+@category("rankfast_sp400", "S&P 400 Fast Rank Momentum", "Momentum", "sp400",
+          "S&P 400 members with the best average rank of 1-, 3- and 6-month returns.",
+          lookback_sessions=135)
+def rankfast_sp400(ctx: Context) -> pd.DataFrame:
+    return _rank_momentum(ctx, ctx.members("sp400"), ("1m", "3m", "6m"))
