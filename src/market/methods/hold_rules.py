@@ -65,7 +65,7 @@ def while_listed(snapshots: pd.DataFrame, panel: Panel, slot, params: dict) -> l
             trade = open_by_id.pop(sid)
             exit_session = _traded_on_or_after(panel, sid, report_date)
             trade.exit_signal_date, trade.exit_session = report_date, exit_session
-            trade.exit_reason = "dropped from slot" if exit_session is not None else "no further bars"
+            trade.exit_reason = "dropped from slot" if exit_session is not None else "exit pending (next session)"
             trades.append(trade)
         for sid, ticker in sorted(listed.items()):
             if sid in open_by_id:
