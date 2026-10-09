@@ -66,3 +66,12 @@ def test_nav_equal_weight_rebalance():
     # Half in A doubles, half in B flat → 150.
     assert np.isclose(nav["nav_price"].iloc[-1], 150.0)
     assert (nav["positions"] == 2).all()
+
+
+def test_today_is_final_only_after_the_close():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from market.data.bars import last_final_session_day
+    ny = ZoneInfo("America/New_York")
+    assert last_final_session_day(datetime(2026, 10, 9, 10, 0, tzinfo=ny)) == date(2026, 10, 8)
+    assert last_final_session_day(datetime(2026, 10, 9, 17, 30, tzinfo=ny)) == date(2026, 10, 9)

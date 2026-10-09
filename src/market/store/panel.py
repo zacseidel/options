@@ -92,9 +92,19 @@ def load_panel(
     bars = con.execute(
         f"SELECT security_id, date, open, high, low, close, vwap, volume FROM bars_daily WHERE {' AND '.join(where)}", params
     ).df()
-    bars["date"] = pd.to_datetime(bars["date"])
-    wide = {field: bars.pivot(index="date", columns="security_id", values=field).sort_index() for field in PRICE_FIELDS}
-    sessions, columns = wide["close"].index, wide["close"].columns
+    # Factorize ids and dates once and scatter into numpy arrays — much faster than one pandas
+    # pivot per field, and a plain object column index keeps .at/.loc lookups fast.
+    sid_codes, sid_values = pd.factorize(bars["security_id"].to_numpy(dtype=object), sort=True)
+    date_codes, date_values = pd.factorize(pd.to_datetime(bars["date"]).to_numpy(), sort=True)
+    sessions = pd.DatetimeIndex(date_values)
+    columns = pd.Index(list(sid_values), dtype=object)
+
+    def wide_of(field: str) -> pd.DataFrame:
+        grid = np.full((len(sessions), len(columns)), np.nan)
+        grid[date_codes, sid_codes] = bars[field].to_numpy(dtype=float)
+        return pd.DataFrame(grid, index=sessions, columns=columns)
+
+    wide = {field: wide_of(field) for field in PRICE_FIELDS}
 
     splits = con.execute("SELECT security_id, ex_date, split_from, split_to FROM splits").df()
     dividends = con.execute("SELECT security_id, ex_date, amount FROM dividends WHERE kind IN ('CD', 'SC')").df()
@@ -103,6 +113,6 @@ def load_panel(
     return Panel(
         close=adjusted["close"], open=adjusted["open"], high=adjusted["high"], low=adjusted["low"],
         vwap=adjusted["vwap"], raw_close=wide["close"],
-        volume=bars.pivot(index="date", columns="security_id", values="volume").sort_index().reindex(columns=columns),
+        volume=wide_of("volume"),
         tr=total_return_index(adjusted["close"], dividends, factor), split_factor=factor,
     )

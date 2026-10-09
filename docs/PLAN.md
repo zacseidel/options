@@ -5,6 +5,17 @@ Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions ar
 
 ---
 
+## Status (2026-10-09)
+
+| Area | State |
+|---|---|
+| Data | S&P 500/400 security master (FIGI ids, ticker history, 4 stand-ins), Wikipedia membership on ids (503–505 / 400–402 members), 1,240 sessions of bars (62 MB DB), splits/dividends, quarterly market caps |
+| Categories | S&P 500 / S&P 400 / Megacap Leaders, Megacap Laggards, Munger Dip — 400+ Tue/Fri reports each since late 2022 (12-mo momentum needs 13 months, so ~3.9 yr of signals from the 5-yr window) |
+| Evaluation | 8 stock strategies (eval's set) on total and price return; 2026 NAVs match eval's live record except S&P 400 (membership-source differences) |
+| Site | Overview, Reports (+ two-date compare), Strategies, Categories, Stocks, Smart money (display only), Methodology |
+| Ops | `python -m market.ops.run` daily pipeline; launchd files in `ops/launchd/` (not yet installed) |
+| Next | Options data + CSP / covered call / LEAP / diagonal on these categories (2 yr); publish to GitHub Pages; SSGA as current-member authority for S&P 400 |
+
 ## 0. Decisions so far
 
 | # | Decision |

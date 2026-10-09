@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Daily market update. Install with:
+    cp ops/launchd/com.zacseidel.market.daily.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.zacseidel.market.daily.plist
+  Weekdays 17:30 local (after Massive publishes the session), catch-ups 20:30 and 07:00 next day.
+  run.sh skips on battery or when the session already completed, so extra firings are cheap.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.zacseidel.market.daily</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/zacseidel/Projects/options/ops/launchd/run.sh</string></array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/zacseidel/Library/Logs/market/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/zacseidel/Library/Logs/market/launchd.err.log</string>
+  <key>WorkingDirectory</key><string>/Users/zacseidel/Projects/options</string>
+</dict>
+</plist>
