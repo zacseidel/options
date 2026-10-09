@@ -10,9 +10,11 @@
   8. market caps       any quarter-end anchor not yet stored (+ refresh the latest weekly)
   9. leaders           point-in-time Congress member and 13F fund leaderboards per report date
  10. categories        recompute recent report dates; full rebuild when a category's code changed
- 11. evaluation        all strategies (derived; ~15 s)
- 12. export            site/data JSON
- 13. publish           (not configured yet)
+ 11. options          option bars for the select option set (previous session's OPRA file, plus a
+                       batched re-stream for names newly entering an option slot)
+ 12. evaluation        all strategies, stock and option (derived)
+ 13. export            site/data JSON
+ 14. publish           (not configured yet)
 
 Usage:  python -m market.ops.run [--full] [--only STEP ...] [--skip STEP ...]
 """
@@ -31,14 +33,14 @@ import pandas as pd
 import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import ROOT
-from market.data import bars, corpactions, market_caps, securities, universe_wiki, watchlists
+from market.data import bars, corpactions, market_caps, option_panel, securities, universe_wiki, watchlists
 from market.evaluate import engine
 from market.reports import export, snapshot
 from market.smartmoney import hedge, ingest, pipeline
 from market.store.db import connect
 
 STEPS = ["watchlists", "universes", "disclosures", "bars", "fund_periods", "signals", "corpactions", "market_caps",
-         "leaders", "categories", "evaluation", "export"]
+         "leaders", "categories", "options", "evaluation", "export"]
 WEEKLY_DAY = 0                      # Monday: refresh slower-moving reference data
 
 
@@ -142,6 +144,10 @@ def step_categories(full: bool) -> dict:
         start = pd.Timestamp(last).date() - timedelta(days=7)
         out["updated"] = snapshot.build(start, None, fresh)
     return {"rebuilt": stale, "updated": fresh, "seconds": sum(v.get("_seconds", 0) for v in out.values())}
+
+
+def step_options(full: bool) -> dict:
+    return option_panel.sync()
 
 
 def step_evaluation(full: bool) -> dict:

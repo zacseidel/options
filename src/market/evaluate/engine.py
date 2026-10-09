@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import duckdb
@@ -23,6 +23,7 @@ import yaml
 
 from market.config import ROOT, config
 from market.evaluate.metrics import performance, trade_stats
+from market.evaluate.options_engine import evaluate_options
 from market.methods.hold_rules import HOLD_RULES, Trade, fill_price
 from market.store.db import connect, replace_rows
 from market.store.panel import Panel, load_panel
@@ -39,6 +40,8 @@ class Strategy:
     params: dict
     instrument: str
     visible: bool
+    method: dict = field(default_factory=dict)   # option method settings (instrument != 'stock')
+    base: str | None = None                      # the stock strategy whose windows an option method uses
 
 
 def load_strategies(path=None) -> list[Strategy]:
@@ -49,6 +52,22 @@ def load_strategies(path=None) -> list[Strategy]:
         spec = {**defaults, **spec}
         out.append(Strategy(spec["id"], spec["category"], spec["slot"], spec["hold"],
                             spec.get("params") or {}, spec["instrument"], spec.get("visible", True)))
+    out.extend(option_strategies(raw.get("option_methods"), {s.id: s for s in out}))
+    return out
+
+
+def option_strategies(spec: dict | None, by_id: dict[str, Strategy]) -> list[Strategy]:
+    """Expand `option_methods` (bases × methods) into strategies that reuse each base's windows."""
+    if not spec:
+        return []
+    out = []
+    for base_id in spec["bases"]:
+        base = by_id[base_id]
+        short_dte = spec["short_dte"].get(base_id, spec["short_dte"]["default"])
+        for m in spec["methods"]:
+            method = {**m, "short_dte": list(short_dte), "leap_dte": dict(spec["leap_dte"])}
+            out.append(Strategy(f"{base_id}.{m['id']}", base.category, base.slot, base.hold, base.params,
+                                m["instrument"], base.visible, method, base_id))
     return out
 
 
@@ -168,8 +187,13 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
     panel = load_panel(con)
     mult = dividend_multiplier(panel)
     cfg = config()["evaluation"]
-    strategies = [s for s in load_strategies() if not strategy_ids or s.id in strategy_ids]
-    starts, summary = [], {}
+    everything = load_strategies()
+    strategies = [s for s in everything if not strategy_ids or s.id in strategy_ids]
+    option_strats = [s for s in strategies if s.instrument != "stock"]
+    # Option strategies reuse their base's windows, so a base is always evaluated with them.
+    needed_bases = {s.base for s in option_strats}
+    strategies = [s for s in everything if s.instrument == "stock" and (s in strategies or s.id in needed_bases)]
+    starts, summary, base_trades = [], {}, {}
 
     for strat in strategies:
         snaps = con.execute(
@@ -179,6 +203,7 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
         snaps["report_date"] = pd.to_datetime(snaps["report_date"]).dt.date
         trades = HOLD_RULES[strat.hold](snaps, panel, strat.slot, strat.params)
         close_out_delisted(trades, panel)
+        base_trades[strat.id] = trades
         start = panel.session_on_or_after(min(snaps["report_date"]))
         starts.append(start)
         frame = trade_frame(strat, trades, panel, mult)
@@ -200,6 +225,17 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
         replace_rows(con, "nav_daily", nav.reset_index(names="date").assign(strategy_id=f"bench.{ticker}")[
             ["strategy_id", "date", "nav", "nav_price", "positions"]], "strategy_id = ?", [f"bench.{ticker}"])
 
+    if option_strats:
+        results = evaluate_options(con, panel, mult, option_strats, base_trades, bench["SPY"]["nav"],
+                                   lambda windows, start: build_nav(windows, panel, mult, start))
+        for sid, res in results.items():
+            if res["trades"] is not None:              # `<base>.stock_same` rows carry only a NAV
+                replace_rows(con, "trades", res["trades"], "strategy_id = ?", [sid])
+                replace_rows(con, "option_legs", res["legs"], "strategy_id = ?", [sid])
+            replace_rows(con, "nav_daily", res["nav"].reset_index(names="date").assign(strategy_id=sid)[
+                ["strategy_id", "date", "nav", "nav_price", "positions"]], "strategy_id = ?", [sid])
+            summary[sid] = {"nav": res["nav"], "stats": res["stats"]}
+
     now = datetime.now()
     metric_rows = []
     for sid, info in {**summary, **{f"bench.{t}": {"nav": n, "stats": {}} for t, n in bench.items()}}.items():
@@ -216,7 +252,7 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
     replace_rows(con, "strategy_metrics", pd.DataFrame(metric_rows),
                  f"strategy_id IN ({','.join('?' * len(set(ids)))})", sorted(set(ids)))
     con.close()
-    return {"seconds": round(time.time() - t0, 1), "strategies": len(strategies)}
+    return {"seconds": round(time.time() - t0, 1), "strategies": len(summary)}
 
 
 def main() -> None:

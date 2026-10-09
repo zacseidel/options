@@ -214,3 +214,45 @@ CREATE TABLE IF NOT EXISTS entity_scores (
     features      JSON,
     PRIMARY KEY (kind, report_date, entity_id)
 );
+
+-- ------------------------------------------------------------------ options (PLAN §4)
+-- The option panel: rows from the daily OPRA day-aggregates file for the select option set,
+-- kept only inside the strike/DTE bands and only around the periods a name is held.
+CREATE TABLE IF NOT EXISTS option_bars (
+    session       DATE NOT NULL,
+    root          VARCHAR NOT NULL,        -- OCC root (ticker without dots)
+    expiry        DATE NOT NULL,
+    kind          VARCHAR NOT NULL,        -- 'C' | 'P'
+    strike        DOUBLE NOT NULL,
+    open          REAL,
+    close         REAL,
+    volume        INTEGER,
+    transactions  INTEGER
+);
+
+-- Which (session, root) pairs have been streamed into option_bars (0 rows is still covered).
+CREATE TABLE IF NOT EXISTS option_coverage (
+    session       DATE NOT NULL,
+    root          VARCHAR NOT NULL,
+    rows          INTEGER NOT NULL,
+    PRIMARY KEY (session, root)
+);
+
+-- Option legs behind each option-strategy trade (one window can hold several legs over time).
+CREATE TABLE IF NOT EXISTS option_legs (
+    strategy_id   VARCHAR NOT NULL,
+    trade_id      VARCHAR NOT NULL,
+    leg           INTEGER NOT NULL,
+    kind          VARCHAR NOT NULL,        -- 'C' | 'P' | 'S' (shares)
+    side          VARCHAR NOT NULL,        -- 'long' | 'short'
+    expiry        DATE,
+    strike        DOUBLE,
+    open_date     DATE NOT NULL,
+    open_price    DOUBLE,                  -- per share/contract-share, after the haircut
+    open_delta    DOUBLE,
+    open_iv       DOUBLE,
+    close_date    DATE,
+    close_price   DOUBLE,
+    close_reason  VARCHAR,
+    quantity      DOUBLE                   -- shares-equivalent per $1 of window capital
+);

@@ -25,7 +25,7 @@ import pandas as pd
 import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import config, directory
-from market.reports import export_smartmoney
+from market.reports import export_options, export_smartmoney
 from market.data import watchlists
 from market.evaluate.engine import load_strategies
 from market.store.db import connect
@@ -85,6 +85,9 @@ def strategy_label(strategy) -> dict:
         f"top {strategy.slot[1]}" if strategy.slot[0] == 1 else f"ranks {strategy.slot[0]}–{strategy.slot[1]}")
     hold = HOLD_LABELS[strategy.hold].format(**{k: str(v).upper() if k == "indicator" else v
                                                 for k, v in strategy.params.items()})
+    if strategy.instrument != "stock":
+        return {"name": f"{cat.name} · {slot} · {strategy.method['label']}", "slot": slot, "hold": hold,
+                "instrument": strategy.method["label"], "options": True, "base": strategy.base}
     return {"name": f"{cat.name} · {slot}", "slot": slot, "hold": hold, "instrument": strategy.instrument}
 
 
@@ -141,6 +144,10 @@ def export() -> dict:
     navs["date"] = pd.to_datetime(navs["date"]).dt.date.astype(str)
     bench_nav = {sid.split(".", 1)[1]: g.set_index("date") for sid, g in navs.groupby("strategy_id") if sid.startswith("bench.")}
     trades = con.execute("SELECT * FROM trades ORDER BY entry_date").df()
+    legs = con.execute("SELECT * FROM option_legs ORDER BY strategy_id, trade_id, leg").df()
+    for col in ("expiry", "open_date", "close_date"):
+        legs[col] = pd.to_datetime(legs[col]).dt.date.astype(str).replace("NaT", None)
+    legs_by = {tid: g for tid, g in legs.groupby("trade_id")}
     for col in ("signal_date", "entry_date", "exit_signal_date", "exit_date"):
         trades[col] = pd.to_datetime(trades[col]).dt.date.astype(str).replace("NaT", None)
 
@@ -161,7 +168,16 @@ def export() -> dict:
                        r.exit_date, _num(r.exit_price, 4), r.exit_reason, _num(r.return_total), _num(r.return_price), r.status]
                       for r in t.itertuples(index=False)]
         label = strategy_label(strat)
+        extra = {}
+        if strat.instrument != "stock":
+            extra["leg_fields"] = ["kind", "side", "expiry", "strike", "open", "open_px", "delta", "iv",
+                                   "close", "close_px", "reason", "qty"]
+            extra["legs"] = [[[g.kind, g.side, g.expiry, _num(g.strike, 2), g.open_date, _num(g.open_price, 4),
+                               _num(g.open_delta, 3), _num(g.open_iv, 3), g.close_date, _num(g.close_price, 4),
+                               g.close_reason, _num(g.quantity, 6)] for g in legs_by[r.trade_id].itertuples(index=False)]
+                             if r.trade_id in legs_by else [] for r in t.itertuples(index=False)]
         sizes[f"strategies/{strat.id}"] = _write(out_dir / "strategies" / f"{strat.id}.json", {
+            **extra,
             "id": strat.id, **label, "category": strat.category,
             "start": session_index.get(dates[0]), "nav": [_num(v, 3) for v in nav["nav"]],
             "nav_price": [_num(v, 3) for v in nav["nav_price"]], "positions": [int(v) for v in nav["positions"]],
@@ -178,8 +194,14 @@ def export() -> dict:
             "spark": [_num(v, 2) for v in nav["nav"].iloc[::5]],
         })
 
-    # ---------------------------------------------------------------- stocks
+    # ---------------------------------------------------------------- options page
     panel = load_panel(con)
+    all_strategies = load_strategies()
+    stock_strategy_ids = {s.id for s in all_strategies if s.instrument == "stock"}
+    sizes["options"] = _write(out_dir / "options.json", export_options.build(
+        con, panel, all_strategies, metrics_by, navs, session_index, key_of, strategy_label))
+
+    # ---------------------------------------------------------------- stocks
     first_report = min(c["first"] for c in category_meta)
     wl = watchlists.load()
     stock_ids = set(snaps["security_id"]) | {
@@ -200,7 +222,7 @@ def export() -> dict:
             continue
         cats = snaps[snaps["security_id"] == sid]
         appearances = {c: [[d, int(r)] for d, r in zip(g["report_date"], g["rank"])] for c, g in cats.groupby("category_id")}
-        t = trades[trades["security_id"] == sid]
+        t = trades[(trades["security_id"] == sid) & trades["strategy_id"].isin(stock_strategy_ids)]
         stock_trades = [[r.strategy_id, r.entry_date, r.exit_date, _num(r.return_total), r.status] for r in t.itertuples(index=False)]
         payload = {
             "ticker": key, "name": names.get(sid), "start": session_index.get(series.index[0].date().isoformat()),

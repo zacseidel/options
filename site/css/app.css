@@ -198,3 +198,10 @@ td.nowrap { white-space: nowrap; }
 td.text-col { max-width: 210px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); font-size: 12px; }
 td { white-space: nowrap; }
 td.name-col { white-space: normal; }
+
+/* ---------------------------------------------------------------- options */
+.options-base { margin-top: 36px; padding-top: 4px; border-top: 1px solid var(--grid); }
+.options-base:first-of-type { border-top: 0; }
+.options-base > h2 { margin-bottom: 2px; }
+.legs { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.legs .chip { font-variant-numeric: tabular-nums; white-space: nowrap; }

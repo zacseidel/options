@@ -36,15 +36,21 @@ options:
     # Sharpe beats SPY's). ~99 distinct names over the 2-year options window, measured 2026-10-09.
     category_slots: [mom12_sp500.top5, rankmom_sp500.top5, mom12_megacap.top5, laggards_mega10.top2.hold21]
     max_underlyings: 200                  # hard cap; additions beyond it are refused and reported
-  # Option panel (PLAN §4): rows from the daily OPRA day-aggregates file are kept only if they
-  # fall inside a band. Contracts we hold that drift outside the bands are fetched per contract.
+  # Option panel (PLAN §4): rows from the daily OPRA day-aggregates file are kept only for names
+  # around the periods an option strategy holds them (entry − 10 days → exit + 5 days), and only
+  # inside these bands. The bands are wide enough that a held contract usually stays inside after a
+  # big move; a held contract with no bar that day is marked with Black-Scholes at its last IV.
   panel:
-    short_dte: [7, 60]                    # CSP / covered-call selection
-    put_strike_pct: [0.70, 1.02]          # strike / spot
-    call_strike_pct: [0.98, 1.20]
-    leap_dte: [180, 800]
-    leap_call_strike_pct: [0.50, 1.00]
-    min_volume: 5
+    history_days: 731                     # Options Starter: 2 years of flat files
+    pad_before_days: 10
+    pad_after_days: 5
+    short_dte: [0, 60]                    # CSP / covered-call / diagonal short legs
+    put_strike_pct: [0.60, 1.30]          # strike / spot
+    call_strike_pct: [0.75, 1.40]
+    leap_dte: [150, 800]
+    leap_call_strike_pct: [0.40, 1.10]
+    min_volume: 1
+    workers: 6                            # parallel flat-file downloads
   # Fills (PLAN §2.4): sell at mid*(1-h), buy at mid*(1+h)
   haircut:
     base_pct: 0.03
@@ -52,9 +58,10 @@ options:
     wide_dte: 180
     wide_abs_delta: 0.15
     wide_multiplier: 2.0
-  liquidity:
+  liquidity:                              # a contract must have traded this much on the selection day
     min_volume: 10
     min_transactions: 3
+    leap: {min_volume: 2, min_transactions: 1}   # long-dated calls trade thinly
 
 evaluation:
   risk_free_rate: 0.04          # annual, for Sharpe/Sortino and alpha

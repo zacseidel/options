@@ -171,7 +171,7 @@ async function overview(root) {
   const draw = () => {
     body.textContent = "";
     const w = state.window;
-    const rows = META.strategies.filter((s) => s.visible).map((s) => ({ ...s, m: s.metrics[w] || {} }));
+    const rows = META.strategies.filter((s) => s.visible && !s.options).map((s) => ({ ...s, m: s.metrics[w] || {} }));
     const bench = Object.entries(META.benchmarks).map(([t, m]) => ({ id: `bench.${t}`, name: `${t} (benchmark)`, bench: true, m: m[w] || {}, holdings: [] }));
     const cols = [
       { key: "name", label: "Strategy", sort: (r) => r.name, cls: () => "name-col", render: (r) => r.bench ? r.name : h("a", { href: `#/strategy/${r.id}` }, r.name) },
@@ -466,9 +466,13 @@ async function strategyPage(root, id) {
   const cat = catOf(s.category);
   const dates = sessions.slice(s.start, s.start + s.nav.length);
   root.appendChild(h("div", { class: "page-head" },
-    h("div", {}, h("div", { class: "muted small" }, h("a", { href: "#/strategies" }, "Strategies"), " / ", h("a", { href: `#/category/${cat.id}` }, cat.name)),
+    h("div", {}, h("div", { class: "muted small" }, s.options
+        ? [h("a", { href: "#/options" }, "Options"), " / ", h("a", { href: `#/strategy/${s.base}` }, stratName(s.base))]
+        : [h("a", { href: "#/strategies" }, "Strategies"), " / ", h("a", { href: `#/category/${cat.id}` }, cat.name)]),
       h("h1", {}, s.name),
-      h("p", { class: "lede" }, `${cat.description} Take the ${s.slot}; ${s.hold}; instrument: ${s.instrument}.`))));
+      h("p", { class: "lede" }, s.options
+        ? `${cat.description} Take the ${s.slot}; ${s.hold}. ${s.instrument} on each holding, opened and closed with the stock (option history only, about 2 years).`
+        : `${cat.description} Take the ${s.slot}; ${s.hold}; instrument: ${s.instrument}.`))));
   const controls = h("div", { class: "controls" });
   const tiles = h("div", { class: "tiles" });
   const navBox = h("div", { class: "card" });
@@ -489,6 +493,11 @@ async function strategyPage(root, id) {
       tile("Win rate", pct(all.win_rate, 0), `${all.closed_trades} closed · ${all.open_trades} open`),
       tile("Avg trade", pct(all.avg_trade, 1, true), `payoff ${num(all.payoff_ratio)} · hold ${all.median_hold_days ?? "—"}d`),
       tile("Half-Kelly", pct(all.half_kelly, 0), all.half_kelly == null ? "needs ≥20 closed trades" : "historical, not advice"));
+    if (s.options) tiles.append(
+      tile("Stock, same windows", pct(all.stock_same?.cagr), `Sharpe ${num(all.stock_same?.sharpe)} · DD ${pct(all.stock_same?.max_drawdown, 0)}`),
+      tile("Spread sensitivity", `${pct(all.haircut?.["0x"]?.cagr)} / ${pct(all.haircut?.["2x"]?.cagr)}`, "CAGR at 0× / 2× haircut"),
+      tile("Premium collected", pct(all.premium_yield, 1), "per year of capital deployed"),
+      tile("Assigned · called", `${pct(all.assignment_rate, 0)} · ${pct(all.called_away_rate, 0)}`, `options on ${pct(all.option_coverage, 0)} of windows`));
 
     const startIdx = state.window === "all" ? 0 : Math.max(0, dates.findIndex((d) => d >= (m.start || dates[0])));
     const slice = (arr) => arr.slice(startIdx);
@@ -523,7 +532,8 @@ async function strategyPage(root, id) {
   draw();
 
   const f = Object.fromEntries(s.trade_fields.map((n, i) => [n, i]));
-  const trades = s.trades.map((t) => Object.fromEntries(Object.entries(f).map(([k, i]) => [k, t[i]])));
+  const trades = s.trades.map((t, n) => ({ ...Object.fromEntries(Object.entries(f).map(([k, i]) => [k, t[i]])), n }));
+  const legsOf = (t) => (s.legs?.[t.n] || []).map((l) => Object.fromEntries(s.leg_fields.map((k, i) => [k, l[i]])));
   const tradeBox = h("div");
   let filter = "all";
   const drawTrades = () => {
@@ -536,12 +546,109 @@ async function strategyPage(root, id) {
       { key: "days", label: "Days", num: true, sort: (t) => ((t.exit ? new Date(t.exit) : new Date()) - new Date(t.entry)), render: (t) => Math.round(((t.exit ? new Date(t.exit) : new Date(META.data_through)) - new Date(t.entry)) / 864e5) },
       { key: "ret_total", label: "Return", num: true, cls: (t) => cls(t.ret_total), render: (t) => pct(t.ret_total, 1, true) },
       { key: "reason", label: "Exit reason", render: (t) => t.reason || "" },
+      ...(s.options ? [{ key: "legs", label: "Legs", nosort: true, render: (t) => legSummary(legsOf(t)) }] : []),
     ], rows, { sortKey: "entry" }));
   };
   root.append(h("h2", {}, `Trades (${trades.length})`),
     h("div", { class: "controls" }, seg([["all", "All"], ["open", "Open"], ["closed", "Closed"]], filter, (v) => { filter = v; drawTrades(); })),
     tradeBox);
   drawTrades();
+}
+
+const legDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }) : "");
+const contractLabel = (l) => `${l.side === "short" ? "−" : "+"}${legDate(l.expiry)} ${l.strike}${l.kind}`;
+
+function legSummary(legs) {
+  return h("span", { class: "legs" }, legs.map((l) => h("span", {
+    class: "chip",
+    title: l.kind === "S"
+      ? `Shares bought ${l.open} at ${num(l.open_px)}; ${l.reason || "open"} ${l.close || ""} ${l.close_px != null ? "at " + num(l.close_px) : ""}`
+      : `${l.side} ${l.kind === "P" ? "put" : "call"} ${l.strike} exp ${l.expiry} · opened ${l.open} at ${num(l.open_px)} (Δ ${num(l.delta)}, IV ${pct(l.iv, 0)}) · ${l.reason || "open"} ${l.close || ""} ${l.close_px != null ? "at " + num(l.close_px) : ""}`,
+  }, l.kind === "S" ? "shares" : contractLabel(l), l.reason && l.reason !== "window end" ? h("span", { class: "muted" }, ` ${l.reason}`) : null)));
+}
+
+async function optionsPage(root) {
+  const data = await load("options.json");
+  root.appendChild(h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Options"),
+    h("p", { class: "lede" }, "Each option method runs on its base strategy's own entries and exits, with the stock version over exactly the same windows for comparison. Option history starts ",
+      data ? fmtDate(data.first_session) : "—", " (about 2 years), so these windows are shorter than the stock pages'.")),
+  ));
+  if (!data || !data.bases?.length) return root.appendChild(h("p", { class: "empty" }, "No option results yet."));
+  root.appendChild(h("p", { class: "muted small", style: "max-width:780px" },
+    "Contracts are chosen on the report's as-of close (Black-Scholes delta from the day's option close) and filled at the next session's mid(open, close), selling at mid × (1 − h) and buying at mid × (1 + h), h = max(3%, $0.05 / mid), doubled past 180 DTE or below |Δ| 0.15. Every leg closes the session the stock would exit. ",
+    "Cash earns 4% (T-bills). LEAPs replace the stock: calls on the window's capital ÷ price shares, the rest in cash. Main results use 1× haircut; 0× and 2× show how much the spread assumption matters."));
+  for (const base of data.bases) {
+    const section = h("section", { class: "options-base" });
+    root.appendChild(section);
+    let pick = base.methods[0].method;
+    const sessions = await load("sessions.json");
+    const dates = sessions.slice(base.start, base.start + base.series.SPY.length);
+    const chartBox = h("div", { class: "card" });
+    const picksBox = h("div");
+    const stockRow = { id: `${base.id}.stock_same`, label: "Stock (same windows)", stock: true, metrics: { all: { ...base.stock_same.all } } };
+    const rows = [stockRow, ...base.methods];
+    const m = (r) => r.metrics.all || {};
+    const cols = [
+      { key: "label", label: "Method", sort: (r) => r.label, cls: () => "name-col", render: (r) => r.stock ? h("a", { href: `#/strategy/${base.id}` }, r.label) : h("a", { href: `#/strategy/${r.id}` }, r.label) },
+      { key: "cagr", label: "CAGR", num: true, sort: (r) => m(r).cagr, cls: (r) => cls(m(r).cagr), render: (r) => pct(m(r).cagr) },
+      { key: "total", label: "Total", num: true, sort: (r) => m(r).total_return, render: (r) => pct(m(r).total_return, 0) },
+      { key: "sharpe", label: "Sharpe", num: true, sort: (r) => m(r).sharpe, render: (r) => num(m(r).sharpe) },
+      { key: "dd", label: "Max DD", num: true, sort: (r) => m(r).max_drawdown, render: (r) => pct(m(r).max_drawdown, 0) },
+      { key: "vol", label: "Vol", num: true, hideNarrow: true, sort: (r) => m(r).volatility, render: (r) => pct(m(r).volatility, 0) },
+      { key: "h0", label: "CAGR 0× / 2×", num: true, hideNarrow: true, title: "CAGR with no spread haircut / with double the haircut", sort: (r) => m(r).haircut?.["0x"]?.cagr,
+        render: (r) => (r.stock ? "" : `${pct(m(r).haircut?.["0x"]?.cagr, 0)} / ${pct(m(r).haircut?.["2x"]?.cagr, 0)}`) },
+      { key: "win", label: "Win %", num: true, sort: (r) => m(r).win_rate, render: (r) => (r.stock ? "" : pct(m(r).win_rate, 0)) },
+      { key: "prem", label: "Premium / yr", num: true, hideNarrow: true, title: "Short premium collected per year of capital deployed", sort: (r) => m(r).premium_yield, render: (r) => (r.stock || !m(r).premium_yield ? "" : pct(m(r).premium_yield, 0)) },
+      { key: "assign", label: "Assigned · called", num: true, hideNarrow: true, sort: (r) => (m(r).assignment_rate || 0) + (m(r).called_away_rate || 0),
+        render: (r) => (r.stock ? "" : r.instrument === "csp" ? pct(m(r).assignment_rate, 0) : r.instrument === "covered_call" ? pct(m(r).called_away_rate, 0) : "") },
+    ];
+    section.append(h("h2", {}, h("a", { href: `#/strategy/${base.id}` }, base.name)),
+      h("p", { class: "muted small" }, `${base.hold} · short legs ${base.short_dte[0]}–${base.short_dte[1]} DTE · ${m(base.methods[0]).windows ?? "—"} windows`),
+      table(cols, rows, { sortKey: "sharpe", rowClass: (r) => (r.stock ? "bench" : null), compact: true }));
+    const controls = h("div", { class: "controls" });
+    section.append(controls, chartBox, h("h3", {}, "If opened today"), picksBox);
+
+    const draw = () => {
+      const method = base.methods.find((x) => x.method === pick);
+      chartBox.textContent = "";
+      chartBox.appendChild(h("h3", {}, `Growth of 100 · ${method.label} vs stock, same windows`));
+      const holder = h("div");
+      chartBox.appendChild(holder);
+      lineChart(holder, { dates, height: 260, baseline: 100, log: state.log, format: (v) => v.toFixed(0), series: [
+        { name: method.label, values: base.series[method.id], color: css("--series-1") },
+        { name: "Stock", values: base.series[`${base.id}.stock_same`], color: css("--series-2") },
+        { name: "SPY", values: base.series.SPY, color: css("--series-3") }] });
+      picksBox.textContent = "";
+      const picks = base.picks.filter((p) => p.method === pick);
+      if (!picks.length) { picksBox.appendChild(h("p", { class: "muted small" }, "No current holdings.")); return; }
+      const legCell = (p, side) => { const l = p.legs.find((x) => x.side === side); return l ? (l.missing ? h("span", { class: "muted" }, "no liquid contract") : contractLabel(l)) : ""; };
+      const val = (p, side, k) => p.legs.find((x) => x.side === side && !x.missing)?.[k];
+      const isLong = method.instrument === "leap" || method.instrument === "diagonal";
+      const isShort = method.instrument !== "leap";
+      picksBox.appendChild(table([
+        { key: "ticker", label: "Ticker", cls: () => "ticker", render: (p) => stockLink(p.ticker) },
+        { key: "spot", label: "Price", num: true, render: (p) => num(p.spot) },
+        ...(isLong ? [
+          { key: "long", label: "Long call", nosort: true, render: (p) => legCell(p, "long") },
+          { key: "lcost", label: "Cost / price", num: true, sort: (p) => val(p, "long", "cost_pct"), render: (p) => pct(val(p, "long", "cost_pct"), 0) },
+          { key: "lext", label: "Time value", num: true, title: "Extrinsic value as a share of the stock price", sort: (p) => val(p, "long", "extrinsic_pct"), render: (p) => pct(val(p, "long", "extrinsic_pct"), 1) },
+        ] : []),
+        ...(isShort ? [
+          { key: "short", label: method.instrument === "csp" ? "Short put" : "Short call", nosort: true, render: (p) => legCell(p, "short") },
+          { key: "prem", label: "Premium", num: true, sort: (p) => val(p, "short", "premium"), render: (p) => num(val(p, "short", "premium")) },
+          { key: "delta", label: "Δ", num: true, sort: (p) => val(p, "short", "delta"), render: (p) => num(val(p, "short", "delta")) },
+          { key: "iv", label: "IV", num: true, sort: (p) => val(p, "short", "iv"), render: (p) => pct(val(p, "short", "iv"), 0) },
+          { key: "yield", label: "Yield / yr", num: true, sort: (p) => val(p, "short", "yield_annual"), render: (p) => pct(val(p, "short", "yield_annual"), 0) },
+          method.instrument === "csp"
+            ? { key: "be", label: "Breakeven", num: true, title: "Strike minus premium, vs today's price", sort: (p) => val(p, "short", "breakeven_pct"), render: (p) => pct(val(p, "short", "breakeven_pct"), 1, true) }
+            : { key: "cap", label: "Upside cap", num: true, title: "Strike vs today's price", sort: (p) => val(p, "short", "cap_pct"), render: (p) => pct(val(p, "short", "cap_pct"), 1, true) },
+        ] : []),
+      ], picks, { sortKey: "ticker", desc: false, compact: true }));
+      picksBox.appendChild(h("p", { class: "muted small" }, `From the ${fmtDate(base.picks_as_of)} option close; delayed data, not a quote.`));
+    };
+    controls.append(seg(base.methods.map((x) => [x.method, x.label.replace("Cash-secured put", "CSP").replace("Covered call", "CC")]), pick, (v) => { pick = v; draw(); }));
+    draw();
+  }
 }
 
 async function strategiesPage(root) {
@@ -583,7 +690,7 @@ async function categoryPage(root, id) {
     h("p", { class: "muted small" }, `Darker = higher rank. ${fmtDate(recent[0])} → ${fmtDate(recent[recent.length - 1])}.`),
     h("div", { class: "card" }, heat));
 
-  const strategies = META.strategies.filter((s) => s.category === id);
+  const strategies = META.strategies.filter((s) => s.category === id && !s.options);
   root.append(h("h2", {}, "Strategies on this category"), table([
     { key: "name", label: "Strategy", render: (s) => h("a", { href: `#/strategy/${s.id}` }, s.name) },
     { key: "hold", label: "Method", render: (s) => `${s.instrument}, ${s.hold}` },
@@ -601,7 +708,7 @@ async function categoriesPage(root) {
     root.appendChild(h("h2", {}, g));
     const grid = h("div", { class: "grid cols-2" });
     for (const c of META.categories.filter((x) => x.group === g)) {
-      const strategies = META.strategies.filter((s) => s.category === c.id);
+      const strategies = META.strategies.filter((s) => s.category === c.id && !s.options);
       grid.appendChild(h("div", { class: "card" }, h("h3", {}, h("a", { href: `#/category/${c.id}` }, c.name)),
         h("p", { class: "ink2", style: "margin:0 0 8px" }, c.description),
         h("div", { class: "muted small" }, `${c.reports} reports · since ${fmtDate(c.first)} · ${strategies.length} strategies`)));
@@ -697,6 +804,9 @@ function methodologyPage(root) {
     p("CAGR, total return, Sharpe and Sortino on daily log returns (4% risk-free), max drawdown, beta/alpha and correlation vs SPY, win rate, payoff ratio, and half-Kelly (0.5 × max(0, p − q/b), shown only with ≥20 closed trades). Half-Kelly is a historical capital-at-risk heuristic, not advice."),
     h("h2", {}, "Rank Momentum"),
     p("Every index member is ranked on its 3-, 6- and 12-month return (1 = best); the list is the best average rank, ties to the stronger 12-month return. Fast Rank Momentum is the same on 1-, 3- and 6-month returns, ties to the stronger 6-month return."),
+    h("h2", {}, "Options"),
+    p("Option methods run on a select set of names: the stocks entering the S&P 500 Leaders, S&P 500 Rank Momentum and Megacap Leaders top 5 and the Megacap Laggards top 2, plus option watchlists. Day bars come from the OPRA flat files (no quotes or open interest), kept only around the periods a name is held and inside strike/expiry bands. Each method reuses the stock strategy's windows; contracts are chosen by Black-Scholes delta on the report's as-of close and filled the next session at mid(open, close) with a spread haircut. A held contract with no trade that day is valued at its last implied volatility."),
+    p("Cash-secured puts: collateral is the strike; an expiring out-of-the-money put is replaced the next session; an assigned put's shares are held until the name leaves the list. Covered calls: shares plus calls on all of them; called-away shares are re-bought the next session. LEAPs (DTE 365–800, nearest 540): calls on capital ÷ price shares with the rest in T-bills, rolled below 180 DTE. Diagonal: that LEAP plus a short call on the same shares, settled at intrinsic if in the money at expiry. A split closes everything the session before and reopens after."),
     h("h2", {}, "Congress"),
     p("Periodic Transaction Reports (House Clerk and Senate eFD, including OCR'd paper filings) are checked daily. A member's skill is measured point-in-time over the trailing two years of disclosures: each purchase is bought at the close of the first session after it was disclosed and sold the session after the member discloses a sale of that name; open lots are marked at the report date. Dollar-weighted (range midpoint) alpha vs SPY; at least 5 purchases to rank."),
     p("Top-5 Buys: purchases disclosed in the last 120 days by the five best-ranked members, scored by each name's share of a member's recent buying, summed across members. Top-5 Holdings: names those members still hold (no sale disclosed), scored by share of each member's open book."),
@@ -707,7 +817,7 @@ function methodologyPage(root) {
 }
 
 // ------------------------------------------------------------------ shell
-const NAV = [["#/", "Overview"], ["#/reports", "Reports"], ["#/strategies", "Strategies"], ["#/categories", "Categories"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
+const NAV = [["#/", "Overview"], ["#/reports", "Reports"], ["#/strategies", "Strategies"], ["#/options", "Options"], ["#/categories", "Categories"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
 
 function shell() {
   const nav = h("nav", { class: "main" }, NAV.map(([href, label]) => h("a", { href }, label)));
@@ -744,7 +854,8 @@ async function route() {
   navEl.querySelectorAll("a").forEach((x) => {
     const target = x.getAttribute("href").slice(2);
     x.classList.toggle("here", target === page || (target === "reports" && ["report", "compare"].includes(page))
-      || (target === "strategies" && page === "strategy") || (target === "categories" && page === "category") || (target === "stocks" && page === "stock"));
+      || (target === "strategies" && page === "strategy" && !META.strategies.find((x) => x.id === a)?.options)
+      || (target === "options" && page === "strategy" && META.strategies.find((x) => x.id === a)?.options) || (target === "categories" && page === "category") || (target === "stocks" && page === "stock"));
   });
   main.classList.add("loading");
   const root = h("div");
@@ -755,6 +866,7 @@ async function route() {
     else if (page === "compare") await reports(root, b, a);
     else if (page === "strategies") await strategiesPage(root);
     else if (page === "strategy") await strategyPage(root, a);
+    else if (page === "options") await optionsPage(root);
     else if (page === "categories") await categoriesPage(root);
     else if (page === "category") await categoryPage(root, a);
     else if (page === "stocks") await stocksPage(root);
