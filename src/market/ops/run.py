@@ -2,13 +2,17 @@
 
   1. watchlists        sync watchlists.yaml into universe membership
   2. universes         Wikipedia + security master + id replay — weekly, or with --full
-  3. bars              grouped daily for any session not yet stored
-  4. corporate actions last 60 days daily; whole window weekly
-  5. market caps       any quarter-end anchor not yet stored (+ refresh the latest weekly)
-  6. categories        recompute recent report dates; full rebuild when a category's code changed
-  7. evaluation        all strategies (derived; ~15 s)
-  8. export            site/data JSON
-  9. publish           (not configured yet)
+  3. disclosures       new Congress PTRs (House, Senate) and 13F filings (EDGAR daily index)
+  4. bars              grouped daily for any session not yet stored
+  5. fund_periods      price 13F holding periods completed since the last run
+  6. signals           Congress / 13F names → security master, bars, splits; repair bar gaps
+  7. corporate actions last 60 days daily; whole window weekly
+  8. market caps       any quarter-end anchor not yet stored (+ refresh the latest weekly)
+  9. leaders           point-in-time Congress member and 13F fund leaderboards per report date
+ 10. categories        recompute recent report dates; full rebuild when a category's code changed
+ 11. evaluation        all strategies (derived; ~15 s)
+ 12. export            site/data JSON
+ 13. publish           (not configured yet)
 
 Usage:  python -m market.ops.run [--full] [--only STEP ...] [--skip STEP ...]
 """
@@ -24,15 +28,17 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-import market.categories.momentum  # noqa: F401
+import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import ROOT
 from market.data import bars, corpactions, market_caps, securities, universe_wiki, watchlists
 from market.evaluate import engine
 from market.reports import export, snapshot
+from market.smartmoney import hedge, ingest, pipeline
 from market.store.db import connect
 
-STEPS = ["watchlists", "universes", "bars", "corpactions", "market_caps", "categories", "evaluation", "export"]
+STEPS = ["watchlists", "universes", "disclosures", "bars", "fund_periods", "signals", "corpactions", "market_caps",
+         "leaders", "categories", "evaluation", "export"]
 WEEKLY_DAY = 0                      # Monday: refresh slower-moving reference data
 
 
@@ -67,6 +73,22 @@ def step_universes(full: bool) -> dict:
     return {"members": {u: (i["coverage_min"], i["coverage_max"]) for u, i in resolved.items()},
             "change_events": {u: i["change_events"] for u, i in wiki.items()},
             "securities": secs["securities"], "synthetic": secs["synthetic"]}
+
+
+def step_disclosures(full: bool) -> dict:
+    return ingest.run()
+
+
+def step_fund_periods(full: bool) -> dict:
+    return hedge.sync_periods()
+
+
+def step_signals(full: bool) -> dict:
+    return pipeline.signals(full)
+
+
+def step_leaders(full: bool) -> dict:
+    return pipeline.leaders(full)
 
 
 def step_bars(full: bool) -> dict:

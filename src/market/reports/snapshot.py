@@ -13,9 +13,10 @@ from datetime import date
 import duckdb
 import pandas as pd
 
-import market.categories.momentum  # noqa: F401  (registers categories)
+import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY, Category, Context
 from market.data.market_caps import daily_market_caps
+from market.smartmoney.signals import SmartMoney
 from market.store.db import connect, replace_rows
 from market.store.panel import Panel, load_panel
 
@@ -33,7 +34,7 @@ def shared_inputs(con: duckdb.DuckDBPyConnection, panel: Panel) -> dict:
     securities = con.execute("SELECT security_id, ticker, cik, name FROM securities").df().set_index("security_id")
     dollar_volume = (panel.raw_close * panel.volume).rolling(60, min_periods=20).mean()
     return {"membership": membership, "caps": daily_market_caps(con, panel),
-            "securities": securities, "dollar_volume": dollar_volume}
+            "securities": securities, "dollar_volume": dollar_volume, "signals": SmartMoney(con, panel)}
 
 
 def ticker_lookup(con: duckdb.DuckDBPyConnection):

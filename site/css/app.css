@@ -189,3 +189,12 @@ td.nowrap { white-space: nowrap; }
   .grid.cols-2, .grid.cols-3 { grid-template-columns: 1fr; }
   .tile .value { font-size: 19px; }
 }
+
+/* ---------------------------------------------------------------- smart money */
+.group-head { margin: 22px 0 10px; color: var(--ink-2); font-size: 13px; text-transform: uppercase; letter-spacing: .05em; font-weight: 650; }
+.group-head.first:first-child { margin-top: 0; }
+.date-list a { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.date-list .count { color: var(--muted); font-size: 11px; }
+td.text-col { max-width: 210px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); font-size: 12px; }
+td { white-space: nowrap; }
+td.name-col { white-space: normal; }

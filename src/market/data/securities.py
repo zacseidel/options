@@ -15,6 +15,7 @@ import asyncio
 from datetime import date, datetime, timedelta
 
 import duckdb
+import numpy as np
 import pandas as pd
 
 from market.config import config
@@ -49,10 +50,59 @@ def candidate_tickers(con: duckdb.DuckDBPyConnection, start: date) -> set[str]:
         f"SELECT DISTINCT ticker FROM universe_changes WHERE universe IN ({marks}) AND date >= ?",
         [*universes, start],
     ).df()["ticker"]
-    tickers = set(members) | set(changed)
+    tickers = set(members) | set(changed) | signal_tickers(con)
     if config()["tracked"].get("watchlists"):
         tickers |= {t for wl in watchlists.load() for t in wl.tickers}
     return {t for t in tickers if t and t[0].isalpha()}
+
+
+SIGNALS = "signals"          # universe holding Congress / 13F names we need prices for
+
+
+def signal_tickers(con: duckdb.DuckDBPyConnection) -> set[str]:
+    rows = con.execute("SELECT DISTINCT ticker FROM universe_membership WHERE universe = ?", [SIGNALS]).fetchall()
+    return {r[0] for r in rows}
+
+
+def set_signal_tickers(con: duckdb.DuckDBPyConnection, source: str, first_needed: dict[str, date]) -> int:
+    """Record the names a smart-money source needs prices for (ticker → first date needed).
+
+    Rows only ever widen: an existing ticker keeps the earlier of its two start dates.
+    """
+    current = dict(con.execute(
+        "SELECT ticker, valid_from FROM universe_membership WHERE universe = ? AND source = ?", [SIGNALS, source]
+    ).fetchall())
+    merged = {t: min(d, current.get(t) or d) for t, d in first_needed.items() if t and t[0].isalpha()}
+    merged.update({t: d for t, d in current.items() if t not in merged})
+    frame = pd.DataFrame({"universe": SIGNALS, "ticker": list(merged), "security_id": None,
+                          "valid_from": list(merged.values()), "valid_to": None, "source": source})
+    replace_rows(con, "universe_membership", frame, "universe = ? AND source = ?", [SIGNALS, source])
+    return len(set(merged) - set(current))
+
+
+def extend() -> dict:
+    """Resolve signal tickers not yet in the security master (daily; the weekly sync redoes all)."""
+    con = connect()
+    known = {r[0] for r in con.execute("SELECT DISTINCT ticker FROM ticker_history").fetchall()}
+    wanted = signal_tickers(con) - known
+    tried = {r[0] for r in con.execute("SELECT key FROM fetch_log WHERE source = 'security_lookup'").fetchall()}
+    wanted -= tried
+    if not wanted:
+        con.close()
+        return {"new_tickers": 0}
+    securities, history, calls = asyncio.run(resolve(wanted, set()))
+    existing = {r[0] for r in con.execute("SELECT security_id FROM securities").fetchall()}
+    if len(securities):
+        securities = securities[~securities["security_id"].isin(existing)]
+        history = history[history["security_id"].isin(set(securities["security_id"]))]
+        con.register("_s", securities)
+        con.execute("INSERT INTO securities BY NAME SELECT * FROM _s")
+        con.register("_h", history)
+        con.execute("INSERT INTO ticker_history BY NAME SELECT * FROM _h")
+    for ticker in wanted:
+        log_fetch(con, "security_lookup", ticker, 1, immutable=False)
+    con.close()
+    return {"new_tickers": len(wanted), "securities_added": len(securities), "calls": calls}
 
 
 def _date(value) -> date | None:
@@ -106,8 +156,20 @@ def ticker_history_rows(
         end = changes[i + 1][0] if i + 1 < len(changes) else delisted
         rows.append({"security_id": security_id, "ticker": ticker,
                      "valid_from": EARLIEST if i == 0 else start, "valid_to": end, "priority": 1})
+    extra = []
     if rows:
-        rows[-1]["ticker"] = current_ticker
+        last = rows[-1]
+        if last["ticker"] != current_ticker:
+            # Fiserv: events end at FI (2023) but it trades as FISV again today — keep the event's
+            # ticker for its segment rather than losing it.
+            extra.append({**last, "priority": 2})
+            last["ticker"] = current_ticker
+        if len(changes) and current_ticker != rows[0]["ticker"]:
+            # Honeywell: events start with a temporary HONI (2026-06-15); before the first event
+            # the current ticker is the best guess. Priority 2 never displaces a real record.
+            extra.append({"security_id": security_id, "ticker": current_ticker,
+                          "valid_from": EARLIEST, "valid_to": changes[0][0], "priority": 2})
+        rows.extend(extra)
     else:
         rows.append({"security_id": security_id, "ticker": current_ticker,
                      "valid_from": EARLIEST, "valid_to": delisted, "priority": 1})
@@ -215,6 +277,38 @@ def tickers_on(history: pd.DataFrame, on: date) -> dict[str, str]:
                     & (pd.to_datetime(history["valid_to"]).fillna(pd.Timestamp.max) > on_ts)]
     valid = valid.assign(_stock=~valid["type"].isin(STOCK_TYPES)).sort_values(["priority", "_stock"])
     return dict(valid.drop_duplicates("ticker")[["ticker", "security_id"]].itertuples(index=False, name=None))
+
+
+def ticker_priorities_on(history: pd.DataFrame, on: date) -> dict[str, int]:
+    """ticker → best priority on `on`, to break ties when two tickers land on one security."""
+    on_ts = pd.Timestamp(on)
+    valid = history[(pd.to_datetime(history["valid_from"]) <= on_ts)
+                    & (pd.to_datetime(history["valid_to"]).fillna(pd.Timestamp.max) > on_ts)]
+    return valid.groupby("ticker")["priority"].min().to_dict()
+
+
+def map_tickers(history: pd.DataFrame, tickers: pd.Series, dates: pd.Series, slack_days: int = 120) -> pd.Series:
+    """Vectorized security_for: the security using each (ticker, date), aligned to `tickers`.
+
+    Exact matches win; otherwise a use of the ticker within `slack_days` either side.
+    """
+    pairs = pd.DataFrame({"ticker": tickers.to_numpy(), "on": pd.to_datetime(dates).to_numpy()})
+    pairs["row"] = np.arange(len(pairs))
+    h = history.assign(
+        valid_from=pd.to_datetime(history["valid_from"]),
+        valid_to=pd.to_datetime(history["valid_to"]).fillna(pd.Timestamp.max),
+        _stock=~history["type"].isin(STOCK_TYPES) if "type" in history else False,
+    )
+    merged = pairs.merge(h, on="ticker", how="inner")
+    out = pd.Series([None] * len(pairs), dtype=object)
+    for slack in (pd.Timedelta(0), pd.Timedelta(days=slack_days)):
+        live = merged[(merged["valid_from"] <= merged["on"] + slack) & (merged["valid_to"] > merged["on"] - slack)]
+        best = live.sort_values(["priority", "_stock"]).drop_duplicates("row")
+        fill = best.set_index("row")["security_id"]
+        missing = out.isna() & out.index.isin(fill.index)
+        out[missing] = fill.reindex(out.index[missing]).to_numpy()
+    out.index = tickers.index
+    return out
 
 
 def security_for(history: pd.DataFrame, ticker: str, on: date, slack_days: int = 120) -> str | None:

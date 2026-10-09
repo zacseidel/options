@@ -54,6 +54,7 @@ class Context:
     caps: pd.DataFrame                     # sessions × security_id market caps
     securities: pd.DataFrame               # security_id → cik, name (index security_id)
     dollar_volume: pd.DataFrame            # sessions × security_id trailing 60-session mean
+    signals: object = None                 # SmartMoney (Congress + 13F), built only when needed
     _members_cache: dict = field(default_factory=dict)
 
     @property

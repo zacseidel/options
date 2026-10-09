@@ -54,7 +54,11 @@ function table(columns, rows, { sortKey, desc = true, rowClass, compact } = {}) 
       return th;
     }));
     const body = sorted.map((r) => h("tr", { class: rowClass ? rowClass(r) : null },
-      columns.map((c) => h("td", { class: `${c.num ? "num " : ""}${c.cls ? c.cls(r) : ""}${c.hideNarrow ? " hide-narrow" : ""}` }, c.render ? c.render(r) : r[c.key] ?? "—"))));
+      columns.map((c) => {
+        const klass = `${c.num ? "num " : ""}${c.cls ? c.cls(r) : ""}${c.hideNarrow ? " hide-narrow" : ""}`;
+        const content = c.render ? c.render(r) : r[c.key] ?? "—";
+        return h("td", { class: klass, title: klass.includes("text-col") && typeof content === "string" ? content : null }, content);
+      })));
     wrap.appendChild(h("table", { class: compact ? "table-compact" : null }, h("thead", {}, head), h("tbody", {}, body)));
   };
   render();
@@ -122,7 +126,16 @@ const FEATURE_LABELS = {
   pct_vs_sma200: ["vs SMA200", (v) => pct(v, 1, true)],
   dip_date: ["Dipped", (v) => (v ? new Date(v + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—")],
   market_cap: ["Mkt cap", money],
+  members: ["Members", (v) => v || "—"], dollars: ["Disclosed $", money],
+  last_disclosed: ["Disclosed", (v) => shortDate(v)], return_since: ["Since disclosed", (v) => pct(v, 1, true)],
+  funds: ["Funds", (v) => (v == null ? "—" : v.toFixed(0))], top_funds: ["Bought by", (v) => v || "—"],
+  value: ["Value", money], held_by: ["Held by", (v) => (v == null ? "—" : v.toFixed(0))],
 };
+const TEXT_FEATURES = new Set(["dip_date", "members", "top_funds", "last_disclosed"]);
+const GROUP_ORDER = ["Momentum", "Reversion", "Congress", "Hedge funds"];
+const shortDate = (v) => (v ? new Date(v + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—");
+const quarterOf = (d) => `Q${Math.floor((+d.slice(5, 7) - 1) / 3) + 1} ${d.slice(0, 4)}`;
+const groups = () => [...new Set(META.categories.map((c) => c.group))].sort((a, b) => GROUP_ORDER.indexOf(a) - GROUP_ORDER.indexOf(b));
 
 function reportTable(cat, report, { compact = false, limit } = {}) {
   const hasPrev = !!report.prevDate;
@@ -131,8 +144,8 @@ function reportTable(cat, report, { compact = false, limit } = {}) {
     { key: "rank", label: "#", num: true, render: (r) => r.rank },
     { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => stockLink(r.key, r.ticker) },
     ...cat.features.slice(0, compact ? 1 : 4).map((f) => ({
-      key: f, label: FEATURE_LABELS[f]?.[0] || f, num: f !== "dip_date",
-      cls: (r) => (["return_1w", "pct_vs_sma200"].includes(f) ? cls(r[f]) : ""),
+      key: f, label: FEATURE_LABELS[f]?.[0] || f, num: !TEXT_FEATURES.has(f),
+      cls: (r) => (["return_1w", "pct_vs_sma200", "return_since"].includes(f) ? cls(r[f]) : TEXT_FEATURES.has(f) && f !== "dip_date" ? "text-col" : ""),
       render: (r) => (FEATURE_LABELS[f]?.[1] || String)(r[f]),
     })),
     { key: "chg", label: "vs prior", nosort: true, render: (r) => changeBadge(r, hasPrev) },
@@ -183,22 +196,35 @@ async function overview(root) {
   // Latest report, one card per category, with changes vs the previous report.
   const latest = META.categories.reduce((a, c) => (c.latest > a ? c.latest : a), "");
   root.appendChild(h("h2", {}, h("a", { href: `#/report/${latest}` }, `Latest report · ${fmtDate(latest)}`)));
-  const grid = h("div", { class: "grid cols-3" });
-  root.appendChild(grid);
-  const sm = await load("smartmoney.json");
-  const radar = new Map();
-  for (const b of sm?.congress_buys || []) radar.set(b.ticker, [...(radar.get(b.ticker) || []), "Congress"]);
-  for (const b of sm?.fund_buys || []) radar.set(b.ticker, [...(radar.get(b.ticker) || []), "13F"]);
-  for (const cat of META.categories) {
-    const data = await categoryData(cat.id);
-    const report = reportWithDiff(data, latest);
-    const flagged = report.rows.filter((r) => radar.has(r.key));
-    grid.appendChild(h("div", { class: "card report-card" },
-      h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name), h("span", { class: "muted small" }, cat.group)),
-      reportTable(cat, report, { compact: true, limit: 10 }),
-      droppedLine(report),
-      flagged.length ? h("div", { class: "dropped" }, "Smart-money activity: ", flagged.map((r, i) => [i ? ", " : "", stockLink(r.key, r.ticker), ` (${radar.get(r.key).join(" + ")})`])) : null));
+  const radar = await smartMoneyRadar(latest);
+  for (const g of groups()) {
+    root.appendChild(h("h3", { class: "group-head" }, g));
+    const grid = h("div", { class: "grid cols-3" });
+    root.appendChild(grid);
+    for (const cat of META.categories.filter((c) => c.group === g)) {
+      const report = reportWithDiff(await categoryData(cat.id), latest);
+      if (!report) continue;
+      const flagged = ["Congress", "Hedge funds"].includes(g) ? [] : report.rows.filter((r) => radar.has(r.key));
+      grid.appendChild(h("div", { class: "card report-card" },
+        h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name), h("span", { class: "muted small" }, cat.group)),
+        reportTable(cat, report, { compact: true, limit: 10 }),
+        droppedLine(report),
+        flagged.length ? h("div", { class: "dropped" }, "Also on smart-money lists: ", flagged.map((r, i) => [i ? ", " : "", stockLink(r.key, r.ticker), ` (${[...radar.get(r.key)].join(", ")})`])) : null));
+    }
   }
+}
+
+/** key → names of the smart-money lists it is on, as of a report date. */
+async function smartMoneyRadar(date) {
+  const radar = new Map();
+  for (const cat of META.categories.filter((c) => ["Congress", "Hedge funds"].includes(c.group))) {
+    const report = reportWithDiff(await categoryData(cat.id), date);
+    for (const r of report?.rows || []) {
+      if (!radar.has(r.key)) radar.set(r.key, new Set());
+      radar.get(r.key).add(cat.name);
+    }
+  }
+  return radar;
 }
 
 async function reports(root, date, compareTo) {
@@ -219,16 +245,219 @@ async function reports(root, date, compareTo) {
     if (d.slice(0, 4) !== year) { year = d.slice(0, 4); list.appendChild(h("div", { class: "year" }, year)); }
     list.appendChild(h("a", { href: `#/report/${d}`, class: d === date ? "here" : null }, fmtDate(d).replace(/, \d{4}$/, "")));
   }
-  const main = h("div", { class: "grid cols-2" });
+  const main = h("div");
   root.appendChild(h("div", { class: "report-layout" }, list, main));
   list.querySelector(".here")?.scrollIntoView({ block: "center" });
-  META.categories.forEach((cat, k) => {
-    const report = reportWithDiff(all[k], date, compareTo);
-    main.appendChild(h("div", { class: "card report-card" },
-      h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name),
-        h("span", { class: "muted small" }, report ? `vs ${report.prevDate ? fmtDate(report.prevDate) : "—"}` : "")),
-      report ? [reportTable(cat, report), droppedLine(report)] : h("div", { class: "empty" }, "No report yet on this date.")));
+  const [congress, hedge] = await Promise.all([congressData(), hedgeData()]);
+  for (const g of groups()) {
+    main.appendChild(h("h2", { class: "group-head first" }, g));
+    const grid = h("div", { class: "grid cols-2" });
+    main.appendChild(grid);
+    META.categories.forEach((cat, k) => {
+      if (cat.group !== g) return;
+      const report = reportWithDiff(all[k], date, compareTo);
+      grid.appendChild(h("div", { class: "card report-card" },
+        h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name),
+          h("span", { class: "muted small" }, report ? `vs ${report.prevDate ? fmtDate(report.prevDate) : "—"}` : "")),
+        report && report.rows.length ? [reportTable(cat, report), droppedLine(report)] : h("div", { class: "empty" }, report ? "Nothing listed on this date." : "No report yet on this date.")));
+    });
+    if (g === "Congress" && !compareTo) grid.appendChild(congressDigest(congress, date, { limit: 8 }));
+    if (g === "Hedge funds" && !compareTo) grid.appendChild(hedgeDigest(hedge, date, { limit: 8 }));
+  }
+}
+
+// ------------------------------------------------------------------ smart-money data (aligned to report dates)
+function rankIndex(ranks) {
+  const m = new Map();
+  for (const [d, id, rank, score] of ranks) {
+    if (!m.has(d)) m.set(d, new Map());
+    m.get(d).set(id, { rank, score });
+  }
+  return m;
+}
+
+/** Index of the report whose window (previous as_of, as_of] contains `day`, or -1. */
+function bucketOf(reports, day) {
+  let lo = 0, hi = reports.length - 1, ans = -1;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (reports[mid][1] >= day) { ans = mid; hi = mid - 1; } else lo = mid + 1; }
+  return ans;
+}
+
+async function congressData() {
+  const c = await load("congress.json");
+  if (!c._ready) {
+    const f = Object.fromEntries(c.trade_fields.map((n, i) => [n, i]));
+    c.rows = c.trades.map((t) => ({ disclosed: t[f.disclosed], traded: t[f.traded], member: t[f.member], ticker: t[f.ticker],
+      key: t[f.key], type: t[f.type], lo: t[f.lo], hi: t[f.hi], owner: t[f.owner], bucket: bucketOf(c.reports, t[f.disclosed]) }));
+    c.rankAt = rankIndex(c.ranks);
+    c.counts = new Map();
+    for (const r of c.rows) c.counts.set(r.bucket, (c.counts.get(r.bucket) || 0) + 1);
+    c._ready = true;
+  }
+  return c;
+}
+
+async function hedgeData() {
+  const d = await load("hedge.json");
+  if (!d._ready) {
+    const f = Object.fromEntries(d.filing_fields.map((n, i) => [n, i]));
+    d.rows = d.filings.map((t) => ({ filed: t[f.filed], cik: t[f.cik], quarter: t[f.quarter], positions: t[f.positions],
+      book: t[f.book], rank: t[f.rank], new: t[f.new], exits: t[f.exits], bucket: bucketOf(d.reports, t[f.filed]) }));
+    d.rankAt = rankIndex(d.ranks);
+    d.counts = new Map();
+    for (const r of d.rows) if (r.rank != null) d.counts.set(r.bucket, (d.counts.get(r.bucket) || 0) + 1);
+    d._ready = true;
+  }
+  return d;
+}
+
+const reportIndex = (reports, date) => {
+  const i = date ? reports.findLastIndex((r) => r[0] <= date) : reports.length - 1;
+  return i < 0 ? reports.length - 1 : i;
+};
+
+const amount = (lo, hi) => (lo == null ? "—" : hi && hi !== lo ? `${money(lo)}–${money(hi)}` : money(lo));
+const typeBadge = (t) => h("span", { class: `badge ${t === "P" ? "up" : t === "S" ? "down" : "flat"}` }, { P: "buy", S: "sell", E: "exch." }[t] || t);
+const rankBadge = (rank, title) => (rank ? h("span", { class: `badge ${rank <= 5 ? "new" : "flat"}`, title }, `#${rank}`) : null);
+
+function congressDigest(c, date, { limit, topOnly = true } = {}) {
+  const i = reportIndex(c.reports, date);
+  const ranks = c.rankAt.get(i) || new Map();
+  const rows = c.rows.filter((r) => r.bucket === i);
+  const buys = rows.filter((r) => r.type === "P").length, sells = rows.filter((r) => r.type === "S").length;
+  const ranked = rows.filter((r) => ranks.has(r.member)).sort((a, b) => ranks.get(a.member).rank - ranks.get(b.member).rank || (b.hi || 0) - (a.hi || 0));
+  const shown = (topOnly ? ranked : rows).slice(0, limit || rows.length);
+  const prev = i > 0 ? c.reports[i - 1][1] : null;
+  return h("div", { class: "card report-card" },
+    h("h3", {}, h("a", { href: `#/congress/${c.reports[i][0]}` }, "Congress disclosures"), h("span", { class: "muted small" }, prev ? `${shortDate(prev)} → ${shortDate(c.reports[i][1])}` : "")),
+    h("p", { class: "small ink2", style: "margin:0 0 8px" }, `${rows.length} trades disclosed (${buys} buys, ${sells} sells) by ${new Set(rows.map((r) => r.member)).size} members; ${ranked.length} by top-25 members.`),
+    shown.length ? disclosureTable(c, shown, ranks, { compact: true }) : h("div", { class: "empty" }, "No trades by top-ranked members in this window."),
+    limit && ranked.length > limit ? h("div", { class: "dropped" }, h("a", { href: `#/congress/${c.reports[i][0]}` }, `All ${rows.length} disclosures →`)) : null);
+}
+
+function disclosureTable(c, rows, ranks, { compact } = {}) {
+  return table([
+    { key: "disclosed", label: "Disclosed", render: (r) => shortDate(r.disclosed) },
+    { key: "member", label: "Member", sort: (r) => ranks.get(r.member)?.rank ?? 999, render: (r) => [c.members[r.member]?.[0] || r.member, " ", rankBadge(ranks.get(r.member)?.rank, "Rank by follow-the-disclosure alpha at this report")] },
+    { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => (r.key ? stockLink(r.key, r.ticker) : r.ticker) },
+    { key: "type", label: "Type", render: (r) => typeBadge(r.type) },
+    { key: "hi", label: "Amount", num: true, render: (r) => amount(r.lo, r.hi) },
+    { key: "traded", label: "Traded", hideNarrow: true, render: (r) => shortDate(r.traded) },
+  ], rows, { sortKey: compact ? "member" : "disclosed", desc: !compact, compact: true });
+}
+
+function hedgeDigest(d, date, { limit, rankedOnly = true } = {}) {
+  const i = reportIndex(d.reports, date);
+  const rows = d.rows.filter((r) => r.bucket === i && (!rankedOnly || r.rank != null)).sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
+  const prev = i > 0 ? d.reports[i - 1][1] : null;
+  return h("div", { class: "card report-card" },
+    h("h3", {}, h("a", { href: `#/hedge/${d.reports[i][0]}` }, "13F filings"), h("span", { class: "muted small" }, prev ? `${shortDate(prev)} → ${shortDate(d.reports[i][1])}` : "")),
+    h("p", { class: "small ink2", style: "margin:0 0 8px" }, rows.length ? `${rows.length} filings by ${rankedOnly ? "top-ranked funds" : "tracked funds"} in this window.` : "No filings by ranked funds in this window (13Fs arrive in waves ~45 days after each quarter)."),
+    rows.length ? filingTable(d, rows.slice(0, limit || rows.length), { compact: true }) : null,
+    limit && rows.length > limit ? h("div", { class: "dropped" }, h("a", { href: `#/hedge/${d.reports[i][0]}` }, `All ${rows.length} filings →`)) : null);
+}
+
+const chips = (items, title) => h("span", {}, items.map(([t, key, w]) => h("span", { class: "chip link", title: `${title} · ${pct(w, 1)} of book` }, key ? stockLink(key, t) : t, h("span", { class: "muted" }, ` ${pct(w, 0)}`))));
+
+function filingTable(d, rows, { compact } = {}) {
+  return table([
+    { key: "filed", label: "Filed", render: (r) => shortDate(r.filed) },
+    { key: "rank", label: "Fund", sort: (r) => r.rank ?? 999, cls: () => "name-col", render: (r) => [d.funds[r.cik] || r.cik, " ", rankBadge(r.rank, "Rank by follow-the-filing alpha when this filing was reported")] },
+    { key: "quarter", label: "Qtr", hideNarrow: true, render: (r) => quarterOf(r.quarter) },
+    { key: "new", label: "New positions", nosort: true, render: (r) => (r.new.length ? chips(r.new.slice(0, compact ? 4 : 8), "new") : h("span", { class: "muted" }, "none")) },
+    { key: "exits", label: "Exited", nosort: true, hideNarrow: true, render: (r) => (r.exits.length ? chips(r.exits.slice(0, compact ? 3 : 5), "exited") : h("span", { class: "muted" }, "none")) },
+  ], rows, { sortKey: "rank", desc: false, compact: true });
+}
+
+function dateList(reports, i, base, counts, label) {
+  const list = h("div", { class: "date-list" });
+  let year = null;
+  for (let k = reports.length - 1; k >= 0; k--) {
+    const d = reports[k][0];
+    if (d.slice(0, 4) !== year) { year = d.slice(0, 4); list.appendChild(h("div", { class: "year" }, year)); }
+    const n = counts.get(k) || 0;
+    list.appendChild(h("a", { href: `#/${base}/${d}`, class: k === i ? "here" : null, title: `${n} ${label}` },
+      shortDate(d), n ? h("span", { class: "count" }, n) : null));
+  }
+  return list;
+}
+
+function leaderTable(rows, { kind }) {
+  return table([
+    { key: "rank", label: "#", num: true },
+    { key: "name", label: kind === "congress" ? "Member" : "Fund", cls: () => "name-col", render: (r) => [r.name, r.detail ? h("span", { class: "muted small" }, ` ${r.detail}`) : null] },
+    { key: "score", label: "Alpha", num: true, title: kind === "congress" ? "Dollar-weighted return above SPY, copying each purchase at disclosure" : "Follow-the-filing return minus SPY over completed quarters", cls: (r) => cls(r.score), render: (r) => pct(r.score, 0, true) },
+    { key: "move", label: "vs prior", nosort: true, render: (r) => (r.prev == null ? h("span", { class: "badge new" }, "NEW") : r.prev > r.rank ? h("span", { class: "badge up" }, `▲${r.prev - r.rank}`) : r.prev < r.rank ? h("span", { class: "badge down" }, `▼${r.rank - r.prev}`) : h("span", { class: "badge flat" }, "—")) },
+    ...(rows[0]?.extra || []).map((x, j) => ({ key: `x${j}`, label: x[0], num: true, hideNarrow: true, sort: (r) => r.extra[j][2], render: (r) => r.extra[j][1] })),
+  ], rows, { sortKey: "rank", desc: false, compact: true });
+}
+
+function leadersAt(data, i, kind, n = 25) {
+  const cur = data.rankAt.get(i) || new Map(), prev = data.rankAt.get(i - 1);
+  const latest = i === data.reports.length - 1 || data.reports[i][0] === data.leaders[0]?.as_of_report;
+  const byId = new Map((latest ? data.leaders : []).map((r) => [String(r.id), r]));
+  return [...cur.entries()].sort((a, b) => a[1].rank - b[1].rank).slice(0, n).map(([id, v]) => {
+    const L = byId.get(String(id));
+    const name = kind === "congress" ? data.members[id]?.[0] || id : data.funds[id] || L?.name || id;
+    const detail = kind === "congress" ? [data.members[id]?.[1], data.members[id]?.[3]].filter(Boolean).join(" · ") : "";
+    const extra = !L ? [] : kind === "congress"
+      ? [["Lots", L.lots, L.lots], ["Return", pct(L.return, 0, true), L.return], ["Beat SPY", pct(L.beat_spy, 0), L.beat_spy]]
+      : [["Qtrs", L.periods, L.periods], ["Return", pct(L.return, 0, true), L.return], ["Beat SPY", pct(L.hit_rate, 0), L.hit_rate], ["Book", money(L.book), L.book]];
+    return { rank: v.rank, score: v.score, name, detail, prev: prev ? prev.get(id)?.rank ?? null : v.rank, extra };
   });
+}
+
+async function smartPage(root, kind, date) {
+  const isC = kind === "congress";
+  const data = await (isC ? congressData() : hedgeData());
+  const R = data.reports;
+  const first = R.findIndex((_, k) => (data.counts.get(k) || 0) > 0 || data.rankAt.has(k));
+  const i = Math.max(reportIndex(R, date), first);
+  const [d, asOf] = R[i];
+  const cats = META.categories.filter((c) => c.group === (isC ? "Congress" : "Hedge funds"));
+  root.appendChild(h("div", { class: "page-head" }, h("div", {},
+    h("h1", {}, isC ? "Congress" : "Hedge funds (13F)", h("span", { class: "muted", style: "font-weight:400" }, ` · report ${fmtDate(d)}`)),
+    h("p", { class: "lede" }, isC
+      ? "Periodic Transaction Reports from the House and Senate, bucketed into the Tuesday/Friday report dates by disclosure date. Members are ranked point-in-time: copy each disclosed purchase at the next close, hold until a sale is disclosed, dollar-weighted alpha vs SPY over the trailing two years."
+      : "13F-HR filings, bucketed into the Tuesday/Friday report dates by filing date. Funds are ranked point-in-time by follow-the-filing alpha: buy each disclosed book the session after it is filed, hold to the next filing, value-weighted, vs SPY, completed quarters only."),
+    h("p", { class: "muted small" }, `Data through ${fmtDate(asOf)} · ledger updated ${(data.ledger_updated || "—").replace("T", " ")}`,
+      !isC && data.wave?.quarter ? ` · ${quarterOf(data.wave.quarter)} filings: ${data.wave.filed} of today's top ${data.wave.top} funds have filed` : ""))));
+  const main = h("div");
+  root.appendChild(h("div", { class: "report-layout" }, dateList(R.slice(0), i, kind, data.counts, isC ? "disclosures" : "filings by ranked funds"), main));
+  root.querySelector(".date-list .here")?.scrollIntoView({ block: "center" });
+
+  const grid = h("div", { class: "grid cols-2" });
+  main.appendChild(grid);
+  for (const cat of cats) {
+    const report = reportWithDiff(await categoryData(cat.id), d);
+    grid.appendChild(h("div", { class: "card report-card" },
+      h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name), h("span", { class: "muted small" }, report?.prevDate ? `vs ${shortDate(report.prevDate)}` : "")),
+      report && report.rows.length ? [reportTable(cat, report), droppedLine(report)] : h("div", { class: "empty" }, "Nothing listed on this date.")));
+  }
+
+  let scope = "top";
+  const box = h("div");
+  const draw = () => {
+    box.textContent = "";
+    if (isC) {
+      const ranks = data.rankAt.get(i) || new Map();
+      const rows = data.rows.filter((r) => r.bucket === i && (scope === "all" || ranks.has(r.member)));
+      box.appendChild(rows.length ? disclosureTable(data, rows, ranks) : h("p", { class: "empty" }, "No disclosures in this window."));
+    } else {
+      const rows = data.rows.filter((r) => r.bucket === i && (scope === "all" || r.rank != null));
+      box.appendChild(rows.length ? filingTable(data, rows) : h("p", { class: "empty" }, "No filings in this window."));
+    }
+  };
+  const prev = i > 0 ? R[i - 1][1] : null;
+  main.append(h("h2", {}, isC ? "Disclosed since the previous report" : "Filed since the previous report",
+      h("span", { class: "muted small", style: "font-weight:400" }, prev ? ` · ${fmtDate(prev)} → ${fmtDate(asOf)}` : "")),
+    h("div", { class: "controls" }, seg([["top", isC ? "Top-25 members" : "Ranked funds"], ["all", "All"]], scope, (v) => { scope = v; draw(); })),
+    box);
+  draw();
+
+  const leaders = leadersAt(data, i, kind);
+  main.append(h("h2", {}, isC ? "Top members at this report" : "Top funds at this report"),
+    leaders.length ? leaderTable(leaders, { kind }) : h("p", { class: "empty" }, isC ? "Not enough disclosures to rank members yet." : "Funds need three completed quarters to rank; the 13F ledger starts with filings from Aug 2024."));
 }
 
 async function strategyPage(root, id) {
@@ -366,7 +595,7 @@ async function categoryPage(root, id) {
 
 async function categoriesPage(root) {
   root.appendChild(h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Categories"),
-    h("p", { class: "lede" }, "Ranked lists computed for every report date from point-in-time data. Options methods and smart-money categories come next."))));
+    h("p", { class: "lede" }, "Ranked lists computed for every report date from point-in-time data. Options methods come next."))));
   const groups = [...new Set(META.categories.map((c) => c.group))];
   for (const g of groups) {
     root.appendChild(h("h2", {}, g));
@@ -382,7 +611,7 @@ async function categoriesPage(root) {
 }
 
 async function stockPage(root, key) {
-  const [s, sessions, sm] = await Promise.all([load(`stocks/${encodeURIComponent(key)}.json`), load("sessions.json"), load("smartmoney.json")]);
+  const [s, sessions] = await Promise.all([load(`stocks/${encodeURIComponent(key)}.json`), load("sessions.json")]);
   if (!s) return root.appendChild(h("p", { class: "empty" }, `No page for ${key} (only names that have appeared in a category or watchlist are tracked).`));
   const dates = sessions.slice(s.start, s.start + s.close.length);
   const last = s.close[s.close.length - 1];
@@ -419,26 +648,24 @@ async function stockPage(root, key) {
     { key: 3, label: "Return", num: true, cls: (t) => cls(t[3]), render: (t) => pct(t[3], 1, true) },
   ], s.trades, { sortKey: 1, compact: true }));
 
-  root.appendChild(h("h2", {}, "Smart money ", h("span", { class: "muted small", style: "font-weight:400" }, "· display only, not used in categories or evaluation")));
+  root.appendChild(h("h2", {}, "Smart money"));
   const grid = h("div", { class: "grid cols-2" });
   root.appendChild(grid);
   grid.appendChild(h("div", { class: "card" }, h("h3", {}, `Congress trades (${s.congress.length})`),
     s.congress.length ? table([
       { key: "disclosed", label: "Disclosed", render: (t) => fmtDate(t.disclosed) },
-      { key: "member", label: "Member", render: (t) => [t.member, t.outperformer ? h("span", { class: "badge up", style: "margin-left:6px" }, "out-performer") : null] },
-      { key: "type", label: "Type", render: (t) => h("span", { class: `badge ${t.type === "buy" ? "up" : "down"}` }, t.type) },
-      { key: "amount_hi", label: "Amount", num: true, render: (t) => `${money(t.amount_lo)}–${money(t.amount_hi)}` },
+      { key: "member", label: "Member", render: (t) => [t.member, t.top ? h("span", { class: "badge new", style: "margin-left:6px", title: "Top 10 by follow-the-disclosure alpha today" }, "top 10") : null] },
+      { key: "type", label: "Type", render: (t) => h("span", { class: `badge ${t.type === "buy" ? "up" : t.type === "sell" ? "down" : "flat"}` }, t.type) },
+      { key: "amount_hi", label: "Amount", num: true, render: (t) => amount(t.amount_lo, t.amount_hi) },
     ], s.congress, { sortKey: "disclosed", compact: true }) : h("p", { class: "empty" }, "No disclosed trades in the ledger.")));
-  const f = s.funds || {};
-  grid.appendChild(h("div", { class: "card" }, h("h3", {}, `13F holders${f.n_holders ? ` (${f.n_holders})` : ""}`),
-    f.holders?.length ? table([
-      { key: "name", label: "Fund", render: (r) => r.name },
+  grid.appendChild(h("div", { class: "card" }, h("h3", {}, `Held by top-200 13F funds (${s.n_funds || 0})`),
+    s.funds?.length ? table([
+      { key: "rank", label: "#", num: true },
+      { key: "name", label: "Fund", render: (r) => [r.name, r.new ? h("span", { class: "badge new", style: "margin-left:6px", title: `New in the filing of ${fmtDate(r.filed)}` }, "new") : null] },
       { key: "alpha", label: "Fund alpha", num: true, cls: (r) => cls(r.alpha), render: (r) => pct(r.alpha, 0, true) },
-      { key: "value", label: "Position", num: true, render: (r) => money(r.value) },
-      { key: "conv", label: "% of book", num: true, render: (r) => pct(r.conv, 1) },
-    ], f.holders, { sortKey: "alpha", compact: true }) : h("p", { class: "empty" }, "Not held by the ranked 13F funds."),
-    f.buyers?.length ? h("p", { class: "small ink2" }, "New buyers last quarter: ", f.buyers.map((b) => b.name).join(", ")) : null,
-    h("p", { class: "muted small" }, `13F data as of ${sm?.generated?.hedge || "—"}`)));
+      { key: "weight", label: "% of book", num: true, render: (r) => pct(r.weight, 1) },
+      { key: "value", label: "Value", num: true, hideNarrow: true, render: (r) => money(r.value) },
+    ], s.funds, { sortKey: "rank", desc: false, compact: true }) : h("p", { class: "empty" }, "Not in the latest books of today's top-ranked funds.")));
 }
 
 async function stocksPage(root) {
@@ -455,42 +682,6 @@ async function stocksPage(root) {
   ], META.stocks, { sortKey: 0, desc: false, compact: true }));
 }
 
-async function smartMoneyPage(root) {
-  const sm = await load("smartmoney.json");
-  const tracked = new Set(sm.tracked);
-  const link = (t) => (tracked.has(t) ? stockLink(t) : t);
-  root.appendChild(h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Smart money"),
-    h("p", { class: "lede" }, "Congressional disclosures and 13F filings from the smartmoney tracker. Shown for context only — not yet part of the categories or evaluations."),
-    h("p", { class: "muted small" }, `Congress as of ${sm.generated.congress || "—"} · 13F as of ${sm.generated.hedge || "—"}`))));
-  const grid = h("div", { class: "grid cols-2" });
-  root.appendChild(grid);
-  grid.appendChild(h("div", {}, h("h2", {}, "Congress · top members by alpha"), table([
-    { key: "member", label: "Member", render: (r) => r.member },
-    { key: "chamber", label: "Chamber", render: (r) => r.chamber },
-    { key: "dw_alpha", label: "Alpha", num: true, title: "Dollar-weighted return above SPY from copying trades at disclosure", cls: (r) => cls(r.dw_alpha), render: (r) => `${r.dw_alpha > 0 ? "+" : ""}${num(r.dw_alpha, 0)}%` },
-    { key: "n_positions", label: "Positions", num: true },
-    { key: "win_rate", label: "Win %", num: true, render: (r) => `${num(r.win_rate, 0)}%` },
-  ], sm.congress_leaders, { sortKey: "dw_alpha", compact: true })));
-  grid.appendChild(h("div", {}, h("h2", {}, "Congress · recent buys by out-performers"), table([
-    { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => link(r.ticker) },
-    { key: "latest", label: "Disclosed", render: (r) => fmtDate(r.latest) },
-    { key: "n_outperformers", label: "Buyers", num: true },
-    { key: "buyers", label: "Who", nosort: true, render: (r) => r.buyers.map((b) => b.member).join(", ") },
-  ], sm.congress_buys, { sortKey: "latest", compact: true })));
-  grid.appendChild(h("div", {}, h("h2", {}, "13F · top funds by alpha"), table([
-    { key: "name", label: "Fund", render: (r) => r.name },
-    { key: "alpha", label: "Alpha", num: true, cls: (r) => cls(r.alpha), render: (r) => pct(r.alpha, 0, true) },
-    { key: "hit_rate", label: "Beat SPY", num: true, title: "Share of quarters beating SPY", render: (r) => pct(r.hit_rate, 0) },
-    { key: "latest_book", label: "Book", num: true, render: (r) => money(r.latest_book) },
-  ], sm.fund_leaders, { sortKey: "alpha", compact: true })));
-  grid.appendChild(h("div", {}, h("h2", {}, "13F · new buys by skilled funds"), table([
-    { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => link(r.ticker) },
-    { key: "issuer", label: "Issuer", render: (r) => r.issuer || "" },
-    { key: "score", label: "Conviction", num: true, title: "Σ max(fund alpha, 0) × position / book", render: (r) => num(r.score * 1000, 1) },
-    { key: "n_buyers", label: "Funds", num: true },
-  ], sm.fund_buys, { sortKey: "score", compact: true })));
-}
-
 function methodologyPage(root) {
   const p = (...t) => h("p", { class: "ink2", style: "max-width:780px" }, ...t);
   root.append(h("h1", {}, "Methodology"),
@@ -504,12 +695,19 @@ function methodologyPage(root) {
     p("Entries and report-driven exits fill at the session's VWAP on the report date (reports publish before the open). Price-indicator exits are decided on a completed close and fill the next session. Positions are equal-weighted, rebalanced only on days a trade opens or closes, and marked at the close. Idle cash earns nothing. No fees or slippage."),
     h("h2", {}, "Metrics"),
     p("CAGR, total return, Sharpe and Sortino on daily log returns (4% risk-free), max drawdown, beta/alpha and correlation vs SPY, win rate, payoff ratio, and half-Kelly (0.5 × max(0, p − q/b), shown only with ≥20 closed trades). Half-Kelly is a historical capital-at-risk heuristic, not advice."),
-    h("h2", {}, "Smart money"),
-    p("Congress and 13F panels are read from the smartmoney tracker and shown for context. They are not yet part of any category or evaluation."));
+    h("h2", {}, "Rank Momentum"),
+    p("Every index member is ranked on its 3-, 6- and 12-month return (1 = best); the list is the best average rank, ties to the stronger 12-month return."),
+    h("h2", {}, "Congress"),
+    p("Periodic Transaction Reports (House Clerk and Senate eFD, including OCR'd paper filings) are checked daily. A member's skill is measured point-in-time over the trailing two years of disclosures: each purchase is bought at the close of the first session after it was disclosed and sold the session after the member discloses a sale of that name; open lots are marked at the report date. Dollar-weighted (range midpoint) alpha vs SPY; at least 5 purchases to rank."),
+    p("Top-5 Buys: purchases disclosed in the last 120 days by the five best-ranked members, scored by each name's share of a member's recent buying, summed across members. Top-5 Holdings: names those members still hold (no sale disclosed), scored by share of each member's open book."),
+    h("h2", {}, "Hedge funds (13F)"),
+    p("13F-HR filings are checked daily against EDGAR's daily index. Each fund's quarterly book (its first 13F-HR for the quarter; amendments ignored; long shares only) is bought the session after it is filed and held to the session after the next filing, value-weighted. Funds rank point-in-time on completed quarters only: at least 3 quarters, ≥ 90% of book priced, beating SPY in more than half of quarters, positive alpha, 5–150 positions, ≥ $100M, no passive giants. The top 200 are the skilled set."),
+    p("Skilled-Fund Buys: positions new in a top fund's latest book (filed in the last 135 days), scored Σ fund alpha × hit rate × position weight. Alpha Drivers: names whose holding-period returns contributed most to the top funds' alpha, among names they still hold. History starts mid-2025: the 13F ledger begins with the August 2024 filings, and funds need three completed quarters to rank."),
+    p("Both feeds are read from the smartmoney ledgers (fetching still runs through its code); every score here is recomputed point-in-time from the raw filings."));
 }
 
 // ------------------------------------------------------------------ shell
-const NAV = [["#/", "Overview"], ["#/reports", "Reports"], ["#/strategies", "Strategies"], ["#/categories", "Categories"], ["#/stocks", "Stocks"], ["#/smart-money", "Smart money"], ["#/methodology", "Methodology"]];
+const NAV = [["#/", "Overview"], ["#/reports", "Reports"], ["#/strategies", "Strategies"], ["#/categories", "Categories"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
 
 function shell() {
   const nav = h("nav", { class: "main" }, NAV.map(([href, label]) => h("a", { href }, label)));
@@ -561,7 +759,9 @@ async function route() {
     else if (page === "category") await categoryPage(root, a);
     else if (page === "stocks") await stocksPage(root);
     else if (page === "stock") await stockPage(root, a);
-    else if (page === "smart-money") await smartMoneyPage(root);
+    else if (page === "congress") await smartPage(root, "congress", a);
+    else if (page === "hedge") await smartPage(root, "hedge", a);
+    else if (page === "smart-money") location.hash = "#/congress";
     else if (page === "methodology") methodologyPage(root);
     else root.appendChild(h("p", { class: "empty" }, "Page not found."));
   } catch (err) {

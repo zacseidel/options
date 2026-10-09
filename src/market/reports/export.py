@@ -6,7 +6,8 @@ Layout (small files, loaded per page):
   categories/<id>.json      full report history for one category (any report / diff is derived in the browser)
   strategies/<id>.json      NAV (total + price) with aligned benchmarks, trades
   stocks/<TICKER>.json      closes, category history, strategy trades, Congress and 13F context
-  smartmoney.json           Congress and 13F leaderboards and recent buying (display only)
+  congress.json             Congress members, trades and leaderboards per report date
+  hedge.json                13F funds, filings (new buys / exits) and leaderboards per report date
 
 Usage:  python -m market.reports.export
 """
@@ -21,10 +22,10 @@ from datetime import datetime
 import duckdb
 import pandas as pd
 
-import market.categories.momentum  # noqa: F401  (registers categories)
+import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import config, directory
-from market.data import ledgers_smartmoney as sm
+from market.reports import export_smartmoney
 from market.data import watchlists
 from market.evaluate.engine import load_strategies
 from market.store.db import connect
@@ -36,6 +37,12 @@ KEY_FEATURES = {
     "mom12_megacap": ["return_12m", "return_1w", "rank_change"],
     "laggards_mega10": ["return_3m", "return_6m", "return_12m", "avg_rank"],
     "munger_top50": ["pct_vs_sma200", "dip_date", "market_cap"],
+    "rankmom_sp500": ["avg_rank", "return_3m", "return_6m", "return_12m"],
+    "rankmom_sp400": ["avg_rank", "return_3m", "return_6m", "return_12m"],
+    "congress_buys": ["members", "dollars", "last_disclosed"],
+    "congress_holdings": ["members", "dollars", "return_since"],
+    "hedge_buys": ["funds", "top_funds", "value"],
+    "hedge_drivers": ["funds", "held_by"],
 }
 HOLD_LABELS = {
     "while_listed": "hold while listed",
@@ -176,8 +183,9 @@ def export() -> dict:
     stock_ids = set(snaps["security_id"]) | {
         sid for sid, tk in key_of.items() if tk in {t for w in wl for t in w.tickers}}
     names = dict(con.execute("SELECT security_id, name FROM securities").fetchall())
-    congress = sm.congress_trades_by_ticker()
-    holders = sm.hedge_stock_holders()
+    report_pairs = [(str(d), str(a)) for d, a in con.execute(
+        "SELECT DISTINCT report_date, as_of FROM category_snapshots WHERE origin = 'backtest' ORDER BY 1").fetchall()]
+    congress_payload, hedge_payload, congress, holders = export_smartmoney.build(con, key_of, report_pairs)
     start_ts = pd.Timestamp(first_report) - pd.DateOffset(months=13)
     closes = panel.close.loc[start_ts:]
     stock_index = []
@@ -192,36 +200,20 @@ def export() -> dict:
         appearances = {c: [[d, int(r)] for d, r in zip(g["report_date"], g["rank"])] for c, g in cats.groupby("category_id")}
         t = trades[trades["security_id"] == sid]
         stock_trades = [[r.strategy_id, r.entry_date, r.exit_date, _num(r.return_total), r.status] for r in t.itertuples(index=False)]
-        h = holders.get(key) or {}
         payload = {
             "ticker": key, "name": names.get(sid), "start": session_index.get(series.index[0].date().isoformat()),
             "close": [_num(v, 4) for v in closes[sid].loc[series.index[0]:]],
             "categories": appearances, "trades": stock_trades,
-            "congress": congress.get(key, [])[:60],
-            "funds": {"n_holders": h.get("n_holders"), "n_buyers": h.get("n_buyers"),
-                      "holders": (h.get("holders") or [])[:15], "buyers": (h.get("buyers") or [])[:15]},
+            "congress": congress.get(key, [])[:80],
+            "funds": holders.get(key, [])[:25],
+            "n_funds": len(holders.get(key, [])),
         }
         sizes[f"stocks/{key}"] = _write(out_dir / "stocks" / f"{key}.json", payload)
         stock_index.append([key, names.get(sid)])
 
-    # ---------------------------------------------------------------- smart money (display only)
-    cr, hr = sm.congress_rankings(), sm.hedge_rankings()
-    fund_buys: dict[str, dict] = {}
-    for ticker, info in holders.items():
-        score = sum(max(b.get("alpha") or 0, 0) * (b.get("conv") or 0) for b in info.get("buyers") or [])
-        if score > 0:
-            fund_buys[ticker] = {"ticker": ticker, "issuer": info.get("issuer"), "score": score,
-                                 "n_buyers": info.get("n_buyers"), "buyers": (info.get("buyers") or [])[:5]}
-    top_buys = sorted(fund_buys.values(), key=lambda r: r["score"], reverse=True)[:40]
-    tracked_keys = {k for k, _ in stock_index}
-    sizes["smartmoney"] = _write(out_dir / "smartmoney.json", {
-        "generated": sm.snapshot_info(),
-        "congress_leaders": [r for r in cr.get("leaderboard", []) if r.get("rankable")][:30],
-        "congress_buys": cr.get("recent_buys", [])[:40],
-        "fund_leaders": hr.get("leaderboard", [])[:30],
-        "fund_buys": top_buys,
-        "tracked": sorted(tracked_keys),
-    })
+    # ---------------------------------------------------------------- smart money
+    sizes["congress"] = _write(out_dir / "congress.json", congress_payload)
+    sizes["hedge"] = _write(out_dir / "hedge.json", hedge_payload)
 
     sizes["meta"] = _write(out_dir / "meta.json", {
         "generated_at": datetime.now().isoformat(timespec="minutes"),

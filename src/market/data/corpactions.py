@@ -63,15 +63,10 @@ async def _fetch(start: date, tickers: list[str]) -> tuple[list[dict], list[dict
         return [r for rows in splits for r in rows], [r for rows in dividends for r in rows], poly.calls
 
 
-def sync(start: date | None = None) -> dict:
-    start = start or history_start()
-    con = connect()
-    history = ticker_map(con)
-    if (date.today() - start).days <= RECENT_DAYS:
-        splits, dividends, calls = asyncio.run(_fetch_market_wide(start))
-    else:
-        splits, dividends, calls = asyncio.run(_fetch(start, sorted(set(history["ticker"]))))
+TICKER_SOURCE = "corpactions_ticker"
 
+
+def _rows(splits: list[dict], dividends: list[dict], history: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     split_rows = pd.DataFrame([
         {"security_id": sid, "ex_date": r["execution_date"], "split_from": r["split_from"], "split_to": r["split_to"]}
         for r, sid in _map(splits, "execution_date", history)
@@ -83,13 +78,51 @@ def sync(start: date | None = None) -> dict:
         for r, sid in _map(dividends, "ex_dividend_date", history)
         if r.get("cash_amount")
     ], columns=["security_id", "ex_date", "pay_date", "amount", "kind"]).drop_duplicates(["security_id", "ex_date", "kind"])
+    return split_rows, dividend_rows
 
+
+def sync(start: date | None = None) -> dict:
+    start = start or history_start()
+    con = connect()
+    history = ticker_map(con)
+    full = (date.today() - start).days > RECENT_DAYS
+    tickers = sorted(set(history["ticker"]))
+    if full:
+        splits, dividends, calls = asyncio.run(_fetch(start, tickers))
+    else:
+        splits, dividends, calls = asyncio.run(_fetch_market_wide(start))
+    split_rows, dividend_rows = _rows(splits, dividends, history)
     replace_rows(con, "splits", split_rows, "ex_date >= ?", [start])
     replace_rows(con, "dividends", dividend_rows, "ex_date >= ?", [start])
     log_fetch(con, "corpactions", str(date.today()), len(split_rows) + len(dividend_rows), immutable=False)
+    if full:
+        for ticker in tickers:
+            log_fetch(con, TICKER_SOURCE, ticker, None, immutable=False)
     con.close()
     return {"splits_seen": len(splits), "splits_kept": len(split_rows),
             "dividends_seen": len(dividends), "dividends_kept": len(dividend_rows), "calls": calls}
+
+
+def sync_new_tickers() -> dict:
+    """Full-window splits and dividends for tickers added since the last full sync."""
+    con = connect()
+    history = ticker_map(con)
+    done = {k for (k,) in con.execute("SELECT key FROM fetch_log WHERE source = ?", [TICKER_SOURCE]).fetchall()}
+    new = sorted(set(history["ticker"]) - done)
+    if not new:
+        con.close()
+        return {"tickers": 0}
+    splits, dividends, calls = asyncio.run(_fetch(history_start(), new))
+    split_rows, dividend_rows = _rows(splits, dividends, history[history["ticker"].isin(new)])
+    for table, frame in (("splits", split_rows), ("dividends", dividend_rows)):
+        if len(frame):
+            con.register("_c", frame)
+            con.execute(f"INSERT OR REPLACE INTO {table} BY NAME SELECT * FROM _c")
+            con.unregister("_c")
+    for ticker in new:
+        log_fetch(con, TICKER_SOURCE, ticker, None, immutable=False)
+    con.close()
+    return {"tickers": len(new), "splits": len(split_rows), "dividends": len(dividend_rows), "calls": calls}
 
 
 def main() -> None:

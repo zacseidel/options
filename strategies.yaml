@@ -29,3 +29,15 @@ strategies:
     slot: all
     hold: price_exit
     params: {indicator: ema, window: 21, exit_when: below}
+  - {id: rankmom_sp500.top5,   category: rankmom_sp500,   slot: [1, 5],  hold: while_listed}
+  - {id: rankmom_sp500.next5,  category: rankmom_sp500,   slot: [6, 10], hold: while_listed}
+  - {id: rankmom_sp400.top5,   category: rankmom_sp400,   slot: [1, 5],  hold: while_listed}
+  - {id: rankmom_sp400.next5,  category: rankmom_sp400,   slot: [6, 10], hold: while_listed}
+  # Smart money (history starts when point-in-time rankings become possible: Congress 2025-01,
+  # 13F once funds have 3 completed quarters — limited by the ledgers' 2024-08 start).
+  - {id: congress_buys.top5,     category: congress_buys,     slot: [1, 5],  hold: while_listed}
+  - {id: congress_holdings.top5, category: congress_holdings, slot: [1, 5],  hold: while_listed}
+  - {id: hedge_buys.top5,        category: hedge_buys,        slot: [1, 5],  hold: while_listed}
+  - {id: hedge_buys.next5,       category: hedge_buys,        slot: [6, 10], hold: while_listed}
+  - {id: hedge_drivers.top5,     category: hedge_drivers,     slot: [1, 5],  hold: while_listed}
+  - {id: hedge_drivers.next5,    category: hedge_drivers,     slot: [6, 10], hold: while_listed}

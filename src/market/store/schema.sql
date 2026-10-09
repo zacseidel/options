@@ -175,3 +175,42 @@ CREATE TABLE IF NOT EXISTS strategy_metrics (
     computed_at   TIMESTAMP NOT NULL,
     PRIMARY KEY (strategy_id, window_name)
 );
+
+-- ------------------------------------------------------------------ smart money (derived; raw ledgers stay in smartmoney)
+-- One completed follow-the-filing holding period per 13F book: bought the session after the
+-- filing, sold the session after the fund's next filing. Prices are not kept.
+CREATE TABLE IF NOT EXISTS fund_periods (
+    cik           BIGINT NOT NULL,
+    accession     VARCHAR,
+    entry         DATE NOT NULL,
+    exit          DATE NOT NULL,
+    ret           DOUBLE NOT NULL,         -- value-weighted return of the priced book
+    spy_ret       DOUBLE NOT NULL,
+    coverage      DOUBLE NOT NULL,         -- priced value / reported value
+    n_priced      INTEGER,
+    n_total       INTEGER,
+    book          DOUBLE,
+    PRIMARY KEY (cik, entry)
+);
+
+-- Position weights and returns for funds that rank at some report date (alpha attribution).
+CREATE TABLE IF NOT EXISTS fund_period_positions (
+    cik           BIGINT NOT NULL,
+    entry         DATE NOT NULL,
+    ticker        VARCHAR NOT NULL,
+    weight        DOUBLE NOT NULL,
+    ret           DOUBLE NOT NULL,
+    PRIMARY KEY (cik, entry, ticker)
+);
+
+-- Point-in-time leaderboards (Congress members, 13F funds) per report date: top N only.
+CREATE TABLE IF NOT EXISTS entity_scores (
+    kind          VARCHAR NOT NULL,        -- 'congress' | 'hedge'
+    report_date   DATE NOT NULL,
+    entity_id     VARCHAR NOT NULL,        -- member slug | CIK
+    name          VARCHAR,
+    rank          INTEGER NOT NULL,
+    score         DOUBLE,                  -- dollar-weighted alpha | follow-the-filing alpha
+    features      JSON,
+    PRIMARY KEY (kind, report_date, entity_id)
+);

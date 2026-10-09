@@ -5,16 +5,17 @@ Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions ar
 
 ---
 
-## Status (2026-10-09)
+## Status (2026-10-09, evening)
 
 | Area | State |
 |---|---|
-| Data | S&P 500/400 security master (FIGI ids, ticker history, 4 stand-ins), Wikipedia membership on ids (503–505 / 400–402 members), 1,240 sessions of bars (62 MB DB), splits/dividends, quarterly market caps |
-| Categories | S&P 500 / S&P 400 / Megacap Leaders, Megacap Laggards, Munger Dip — 400+ Tue/Fri reports each since late 2022 (12-mo momentum needs 13 months, so ~3.9 yr of signals from the 5-yr window) |
-| Evaluation | 8 stock strategies (eval's set) on total and price return; 2026 NAVs match eval's live record except S&P 400 (membership-source differences) |
-| Site | Overview, Reports (+ two-date compare), Strategies, Categories, Stocks, Smart money (display only), Methodology |
-| Ops | `python -m market.ops.run` daily pipeline; launchd files in `ops/launchd/` (not yet installed) |
-| Next | Options data + CSP / covered call / LEAP / diagonal on these categories (2 yr); publish to GitHub Pages; SSGA as current-member authority for S&P 400 |
+| Data | S&P 500/400 security master (FIGI ids, ticker history, stand-ins) + Congress-bought and 13F-signal names ("signals" universe, ~1,750 securities); bars self-heal gaps (Honeywell pre-2026, Fiserv 2023–25 were missing); splits/dividends; quarterly market caps |
+| Categories | Momentum: S&P 500 / S&P 400 / Megacap Leaders, S&P 500 / S&P 400 Rank Momentum · Reversion: Megacap Laggards, Munger Dip · Congress: Top-5 Buys, Top-5 Holdings (from 2025-01) · Hedge funds: Skilled-Fund Buys, Alpha Drivers (from mid-2025) |
+| Smart money | Point-in-time member and fund rankings recomputed from the raw ledgers (`market.smartmoney`); 13F follow-the-filing periods priced once and stored (`fund_periods`); leaderboards per report date (`entity_scores`) |
+| Evaluation | 18 stock strategies |
+| Site | Overview, Reports (grouped by section, with Congress / 13F digests), Strategies, Categories, Congress, Hedge funds, Stocks, Methodology |
+| Ops | `python -m market.ops.run` daily: disclosures (House/Senate PTRs + EDGAR daily 13F index) → bars → fund periods → signals → … → export; launchd files in `ops/launchd/` (not yet installed) |
+| Next | Options data + CSP / covered call / LEAP / diagonal (2 yr); publish; port the smartmoney fetchers (its 13F ledger keeps only a 2-year window); backfill older 13Fs from EDGAR to lengthen the 13F history |
 
 ## 0. Decisions so far
 
