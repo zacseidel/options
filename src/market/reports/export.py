@@ -8,6 +8,7 @@ Layout (small files, loaded per page):
   stocks/<TICKER>.json      closes, category history, strategy trades, Congress and 13F context
   congress.json             Congress members, trades and leaderboards per report date
   hedge.json                13F funds, filings (new buys / exits) and leaderboards per report date
+  members/<id>.json, funds/<cik>.json   profiles of members / funds ever ranked top 25
 
 Usage:  python -m market.reports.export
 """
@@ -25,7 +26,7 @@ import pandas as pd
 import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import config, directory
-from market.reports import export_options, export_smartmoney
+from market.reports import export_options, export_profiles, export_smartmoney
 from market.data import watchlists
 from market.evaluate.engine import load_strategies
 from market.store.db import connect
@@ -236,6 +237,16 @@ def export() -> dict:
         stock_index.append([key, names.get(sid)])
 
     # ---------------------------------------------------------------- smart money
+    members = export_profiles.member_profiles(con, panel, key_of)
+    funds = export_profiles.fund_profiles(con, key_of)
+    for mid, payload in members.items():
+        sizes[f"members/{mid}"] = _write(out_dir / "members" / f"{mid}.json", payload)
+    for cik, payload in funds.items():
+        sizes[f"funds/{cik}"] = _write(out_dir / "funds" / f"{cik}.json", payload)
+    congress_payload["profiles"] = sorted(members)
+    congress_payload["data_start"] = next(iter(members.values()))["data_start"] if members else None
+    hedge_payload["profiles"] = sorted(funds)
+    hedge_payload["data_start"] = next(iter(funds.values()))["data_start"] if funds else None
     sizes["congress"] = _write(out_dir / "congress.json", congress_payload)
     sizes["hedge"] = _write(out_dir / "hedge.json", hedge_payload)
 
@@ -246,6 +257,7 @@ def export() -> dict:
         "benchmarks": {k.split(".", 1)[1]: v for k, v in metrics_by.items() if k.startswith("bench.")},
         "windows": list(config()["evaluation"]["windows"]),
         "stocks": stock_index,
+        "profiles": {"congress": sorted(members), "hedge": sorted(funds)},
         "watchlists": [{"name": w.name, "description": w.description, "options": w.options,
                         "tickers": sorted(w.tickers)} for w in wl],
     })

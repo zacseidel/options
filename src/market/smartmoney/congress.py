@@ -75,9 +75,9 @@ def _benchmark_id(panel: Panel, history: pd.DataFrame, ticker: str) -> str:
     return rows["security_id"].iloc[0]
 
 
-def lot_returns(data: CongressData, as_of_pos: int) -> pd.DataFrame:
+def lot_returns(data: CongressData, as_of_pos: int, window_days: int | None = None) -> pd.DataFrame:
     """Lots public by `as_of` within the trailing window, with return and SPY return to date."""
-    cutoff = data.sessions[as_of_pos] - pd.Timedelta(days=WINDOW_DAYS)
+    cutoff = data.sessions[as_of_pos] - pd.Timedelta(days=window_days or WINDOW_DAYS)
     lots = data.lots[(data.lots["pos"] <= as_of_pos) & (data.lots["disclosed"] >= cutoff)].copy()
     end = np.minimum(lots["exit_pos"].to_numpy(), as_of_pos)
     start = lots["pos"].to_numpy()
@@ -89,8 +89,8 @@ def lot_returns(data: CongressData, as_of_pos: int) -> pd.DataFrame:
     return lots.dropna(subset=["ret", "spy_ret"])
 
 
-def member_scores(data: CongressData, as_of_pos: int) -> pd.DataFrame:
-    lots = lot_returns(data, as_of_pos)
+def member_scores(data: CongressData, as_of_pos: int, window_days: int | None = None) -> pd.DataFrame:
+    lots = lot_returns(data, as_of_pos, window_days)
     if lots.empty:
         return pd.DataFrame()
     lots["w"] = lots["amount"].fillna(1.0)

@@ -47,6 +47,20 @@ SP500 top5 64.8% · RankMom500 top5 54.8% · Megacap top5 42.4% · SP400 top5 40
 RankMom400 top5 22.6% · Congress Buys 12.3% · Congress Holdings 9.4% · Munger 14.6%.
 13F and Congress windows are short (~15 and ~21 months), so treat those numbers as anecdotal.
 
+## Member and fund profiles (2026-10-10)
+- `#/member/<id>` and `#/fund/<cik>` for every member / fund that has ranked top 25 on any report date
+  (`export_profiles.py`; 59 members, 162 funds). Rebuilt by every export, so they stay current and the
+  set only grows. Each shows 1y / 2y (ranking) / since-data-start records, dollars disclosed (Congress:
+  purchase and sale range midpoints; 13F: reported book), rank-history chart, copied lots or quarterly
+  books, holdings. Leaderboards gained a Bought (2y) / 13F book column and links.
+- Scoring is unchanged and matches smartmoney: Congress alpha = dollar-weighted average of per-purchase
+  (return − SPY) over purchases disclosed in the trailing 730 days, not annualized, ≥5 purchases;
+  funds = compounded follow-the-filing quarters that started in the trailing 730 days.
+- **Why the top alpha moved:** the Congress ledger starts 2024-06-18, so "2 years" was really "since
+  June 2024" until mid-2026; since then 2024 purchases have been dropping out (e.g. Wasserman Schultz
+  81% → 34%, Sessions / McGarvey fell below 5 purchases). Top ranks are also dominated by tiny books
+  (Evans: 6 buys, ~$48k). Open question for the user: rank on 1y vs 2y; a minimum-dollars gate.
+
 ## New categories (2026-10-10, not in Options)
 - **S&P 500 Leaders, Isolated Stall** (`mom12stall_sp500`): momentum10's report-only stall flag made a rule.
   Stalled = highest close of the last 60 sessions is >15 sessions old. If ≤3 of the unfiltered top 10 by

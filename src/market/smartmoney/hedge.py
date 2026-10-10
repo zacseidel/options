@@ -185,10 +185,11 @@ def sync_periods(b: Books | None = None) -> dict:
 
 # ------------------------------------------------------------------ point-in-time ranking
 
-def rank_funds(periods: pd.DataFrame, b: Books, as_of: pd.Timestamp) -> pd.DataFrame:
-    """Funds ranked by follow-the-filing alpha over periods that ended by `as_of`."""
+def fund_stats(periods: pd.DataFrame, b: Books, as_of: pd.Timestamp, window_days: int | None = None) -> pd.DataFrame:
+    """Every fund's follow-the-filing record over completed periods in the window, with an `eligible`
+    flag (the ranking gates) — unranked funds included, for profile pages."""
     window = periods[(pd.to_datetime(periods["exit"]) <= as_of)
-                     & (pd.to_datetime(periods["entry"]) >= as_of - pd.Timedelta(days=WINDOW_DAYS))]
+                     & (pd.to_datetime(periods["entry"]) >= as_of - pd.Timedelta(days=window_days or WINDOW_DAYS))]
     if window.empty:
         return pd.DataFrame()
     window = window.assign(g=1 + window["ret"], gs=1 + window["spy_ret"],
@@ -205,9 +206,17 @@ def rank_funds(periods: pd.DataFrame, b: Books, as_of: pd.Timestamp) -> pd.DataF
     funds["alpha"] = funds["fund_return"] - funds["spy_return"]
     latest = latest_books(b, as_of, max_age_days=STALE_DAYS)
     funds = funds.join(latest[["name", "filing_date", "gated", "book"]], how="inner")
-    ok = ((funds["periods"] >= MIN_PERIODS) & (funds["coverage"] >= MIN_COVERAGE)
-          & (funds["hit_rate"] > MIN_HIT_RATE) & (funds["alpha"] > 0) & funds["gated"])
-    ranked = funds[ok].sort_values("alpha", ascending=False)
+    funds["eligible"] = ((funds["periods"] >= MIN_PERIODS) & (funds["coverage"] >= MIN_COVERAGE)
+                         & (funds["hit_rate"] > MIN_HIT_RATE) & (funds["alpha"] > 0) & funds["gated"])
+    return funds
+
+
+def rank_funds(periods: pd.DataFrame, b: Books, as_of: pd.Timestamp, window_days: int | None = None) -> pd.DataFrame:
+    """Funds ranked by follow-the-filing alpha over periods that ended by `as_of`."""
+    funds = fund_stats(periods, b, as_of, window_days)
+    if funds.empty:
+        return funds
+    ranked = funds[funds["eligible"]].sort_values("alpha", ascending=False).drop(columns="eligible")
     ranked["rank"] = np.arange(1, len(ranked) + 1)
     return ranked
 

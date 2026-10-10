@@ -269,9 +269,9 @@ async function reports(root, date, compareTo) {
 // ------------------------------------------------------------------ smart-money data (aligned to report dates)
 function rankIndex(ranks) {
   const m = new Map();
-  for (const [d, id, rank, score] of ranks) {
+  for (const [d, id, rank, score, size] of ranks) {
     if (!m.has(d)) m.set(d, new Map());
-    m.get(d).set(id, { rank, score });
+    m.get(d).set(id, { rank, score, size });
   }
   return m;
 }
@@ -338,7 +338,7 @@ function congressDigest(c, date, { limit, topOnly = true } = {}) {
 function disclosureTable(c, rows, ranks, { compact } = {}) {
   return table([
     { key: "disclosed", label: "Disclosed", render: (r) => shortDate(r.disclosed) },
-    { key: "member", label: "Member", sort: (r) => ranks.get(r.member)?.rank ?? 999, render: (r) => [c.members[r.member]?.[0] || r.member, " ", rankBadge(ranks.get(r.member)?.rank, "Rank by follow-the-disclosure alpha at this report")] },
+    { key: "member", label: "Member", sort: (r) => ranks.get(r.member)?.rank ?? 999, render: (r) => [memberLink(r.member, c.members[r.member]?.[0] || r.member), " ", rankBadge(ranks.get(r.member)?.rank, "Rank by follow-the-disclosure alpha at this report")] },
     { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => (r.key ? stockLink(r.key, r.ticker) : r.ticker) },
     { key: "type", label: "Type", render: (r) => typeBadge(r.type) },
     { key: "hi", label: "Amount", num: true, render: (r) => amount(r.lo, r.hi) },
@@ -362,7 +362,7 @@ const chips = (items, title) => h("span", {}, items.map(([t, key, w]) => h("span
 function filingTable(d, rows, { compact } = {}) {
   return table([
     { key: "filed", label: "Filed", render: (r) => shortDate(r.filed) },
-    { key: "rank", label: "Fund", sort: (r) => r.rank ?? 999, cls: () => "name-col", render: (r) => [d.funds[r.cik] || r.cik, " ", rankBadge(r.rank, "Rank by follow-the-filing alpha when this filing was reported")] },
+    { key: "rank", label: "Fund", sort: (r) => r.rank ?? 999, cls: () => "name-col", render: (r) => [fundLink(r.cik, d.funds[r.cik] || r.cik), " ", rankBadge(r.rank, "Rank by follow-the-filing alpha when this filing was reported")] },
     { key: "quarter", label: "Qtr", hideNarrow: true, render: (r) => quarterOf(r.quarter) },
     { key: "new", label: "New positions", nosort: true, render: (r) => (r.new.length ? chips(r.new.slice(0, compact ? 4 : 8), "new") : h("span", { class: "muted" }, "none")) },
     { key: "exits", label: "Exited", nosort: true, hideNarrow: true, render: (r) => (r.exits.length ? chips(r.exits.slice(0, compact ? 3 : 5), "exited") : h("span", { class: "muted" }, "none")) },
@@ -385,7 +385,8 @@ function dateList(reports, i, base, counts, label) {
 function leaderTable(rows, { kind }) {
   return table([
     { key: "rank", label: "#", num: true },
-    { key: "name", label: kind === "congress" ? "Member" : "Fund", cls: () => "name-col", render: (r) => [r.name, r.detail ? h("span", { class: "muted small" }, ` ${r.detail}`) : null] },
+    { key: "name", label: kind === "congress" ? "Member" : "Fund", cls: () => "name-col", render: (r) => [kind === "congress" ? memberLink(r.id, r.name) : fundLink(r.id, r.name), r.detail ? h("span", { class: "muted small" }, ` ${r.detail}`) : null] },
+    { key: "size", label: kind === "congress" ? "Bought (2y)" : "13F book", num: true, title: kind === "congress" ? "Disclosed purchases in the ranking window (range midpoints)" : "Reported value of long US positions in the latest 13F", render: (r) => money(r.size) },
     { key: "score", label: "Alpha", num: true, title: kind === "congress" ? "Dollar-weighted return above SPY, copying each purchase at disclosure" : "Follow-the-filing return minus SPY over completed quarters", cls: (r) => cls(r.score), render: (r) => pct(r.score, 0, true) },
     { key: "move", label: "vs prior", nosort: true, render: (r) => (r.prev == null ? h("span", { class: "badge new" }, "NEW") : r.prev > r.rank ? h("span", { class: "badge up" }, `▲${r.prev - r.rank}`) : r.prev < r.rank ? h("span", { class: "badge down" }, `▼${r.rank - r.prev}`) : h("span", { class: "badge flat" }, "—")) },
     ...(rows[0]?.extra || []).map((x, j) => ({ key: `x${j}`, label: x[0], num: true, hideNarrow: true, sort: (r) => r.extra[j][2], render: (r) => r.extra[j][1] })),
@@ -402,8 +403,8 @@ function leadersAt(data, i, kind, n = 25) {
     const detail = kind === "congress" ? [data.members[id]?.[1], data.members[id]?.[3]].filter(Boolean).join(" · ") : "";
     const extra = !L ? [] : kind === "congress"
       ? [["Lots", L.lots, L.lots], ["Return", pct(L.return, 0, true), L.return], ["Beat SPY", pct(L.beat_spy, 0), L.beat_spy]]
-      : [["Qtrs", L.periods, L.periods], ["Return", pct(L.return, 0, true), L.return], ["Beat SPY", pct(L.hit_rate, 0), L.hit_rate], ["Book", money(L.book), L.book]];
-    return { rank: v.rank, score: v.score, name, detail, prev: prev ? prev.get(id)?.rank ?? null : v.rank, extra };
+      : [["Qtrs", L.periods, L.periods], ["Return", pct(L.return, 0, true), L.return], ["Beat SPY", pct(L.hit_rate, 0), L.hit_rate]];
+    return { id, rank: v.rank, score: v.score, size: v.size, name, detail, prev: prev ? prev.get(id)?.rank ?? null : v.rank, extra };
   });
 }
 
@@ -418,8 +419,8 @@ async function smartPage(root, kind, date) {
   root.appendChild(h("div", { class: "page-head" }, h("div", {},
     h("h1", {}, isC ? "Congress" : "Hedge funds (13F)", h("span", { class: "muted", style: "font-weight:400" }, ` · report ${fmtDate(d)}`)),
     h("p", { class: "lede" }, isC
-      ? "Periodic Transaction Reports from the House and Senate, bucketed into the Tuesday/Friday report dates by disclosure date. Members are ranked point-in-time: copy each disclosed purchase at the next close, hold until a sale is disclosed, dollar-weighted alpha vs SPY over the trailing two years."
-      : "13F-HR filings, bucketed into the Tuesday/Friday report dates by filing date. Funds are ranked point-in-time by follow-the-filing alpha: buy each disclosed book the session after it is filed, hold to the next filing, value-weighted, vs SPY, completed quarters only."),
+      ? "Periodic Transaction Reports from the House and Senate, bucketed into the Tuesday/Friday report dates by disclosure date. Members are ranked point-in-time: copy each disclosed purchase at the next close, hold until a sale is disclosed, dollar-weighted alpha vs SPY on purchases disclosed in the trailing two years (not annualized; at least 5 purchases). The ledger starts Jun 18, 2024, so before mid-2026 the window was shorter than two years. Click a member for 1-year and 2-year records and dollars disclosed."
+      : "13F-HR filings, bucketed into the Tuesday/Friday report dates by filing date. Funds are ranked point-in-time by follow-the-filing alpha: buy each disclosed book the session after it is filed, hold to the next filing, value-weighted, vs SPY, over completed quarters that started in the trailing two years (the 13F ledger starts with filings from Jul 2024). Click a fund for its quarterly books, 1-year and 2-year records and holdings."),
     h("p", { class: "muted small" }, `Data through ${fmtDate(asOf)} · ledger updated ${(data.ledger_updated || "—").replace("T", " ")}`,
       !isC && data.wave?.quarter ? ` · ${quarterOf(data.wave.quarter)} filings: ${data.wave.filed} of today's top ${data.wave.top} funds have filed` : ""))));
   const main = h("div");
@@ -458,6 +459,134 @@ async function smartPage(root, kind, date) {
   const leaders = leadersAt(data, i, kind);
   main.append(h("h2", {}, isC ? "Top members at this report" : "Top funds at this report"),
     leaders.length ? leaderTable(leaders, { kind }) : h("p", { class: "empty" }, isC ? "Not enough disclosures to rank members yet." : "Funds need three completed quarters to rank; the 13F ledger starts with filings from Aug 2024."));
+}
+
+// ---------------------------------------------------------------- member / fund profiles
+const hasProfile = (kind, id) => (META.profiles?.[kind] || []).includes(String(id));
+const memberLink = (id, label) => (hasProfile("congress", id) ? h("a", { href: `#/member/${encodeURIComponent(id)}` }, label) : label);
+const fundLink = (cik, label) => (hasProfile("hedge", cik) ? h("a", { href: `#/fund/${cik}` }, label) : label);
+const dollarRange = (x) => (x && x.count ? h("span", { title: `${x.count} disclosures · ranges sum to ${money(x.lo)}–${money(x.hi)}` }, money(x.mid), h("span", { class: "muted small" }, ` (${x.count})`)) : "—");
+
+function historyChart(fields, rows, label) {
+  const f = Object.fromEntries(fields.map((n, i) => [n, i]));
+  if (rows.length < 2) return h("p", { class: "muted small" }, "Not enough report dates ranked yet.");
+  const holder = h("div");
+  lineChart(holder, { dates: rows.map((r) => r[f.report]), height: 200, baseline: 0, format: (v) => `${v.toFixed(0)}%`,
+    series: [{ name: label, values: rows.map((r) => (r[f.alpha] == null ? null : r[f.alpha] * 100)), color: css("--series-1") }] });
+  return holder;
+}
+
+async function memberPage(root, id) {
+  const m = await load(`members/${encodeURIComponent(id)}.json`);
+  if (!m) return root.appendChild(h("p", { class: "empty" }, "No profile for this member (profiles cover members who have ranked in the top 25)."));
+  const now = m.windows.find((w) => w.key === "2y") || m.windows[0];
+  root.appendChild(h("div", { class: "page-head" }, h("div", {},
+    h("div", { class: "muted small" }, h("a", { href: "#/congress" }, "Congress"), " / member"),
+    h("h1", {}, m.name), h("p", { class: "lede" }, [m.chamber ? m.chamber[0].toUpperCase() + m.chamber.slice(1) : "", m.party, m.state].filter(Boolean).join(" · ")),
+    h("p", { class: "muted small" }, `As of ${fmtDate(m.as_of)} · the disclosure ledger starts ${fmtDate(m.data_start)}`))));
+  const tile = (label, value, sub) => h("div", { class: "tile" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value), sub ? h("div", { class: "delta" }, sub) : null);
+  root.appendChild(h("div", { class: "tiles" },
+    tile("Rank (2y)", now.rank ? `#${now.rank}` : "—", now.rank ? `of ${now.ranked_of} ranked` : now.lots < 5 ? "needs 5 buys in window" : "unranked"),
+    tile("Alpha (2y)", pct(now.alpha, 0, true), `return ${pct(now.return, 0, true)}`),
+    tile("Bought (2y)", money(now.bought.mid), `${now.bought.count} buys · ${money(now.bought.lo)}–${money(now.bought.hi)}`),
+    tile("Sold (2y)", money(now.sold.mid), `${now.sold.count} sales`),
+    tile("Beat SPY", pct(now.beat_spy, 0), `${now.lots} copied buys · ${now.open_lots} still held`)));
+  root.appendChild(h("p", { class: "muted small", style: "max-width:780px" },
+    "Alpha copies each disclosed purchase at the close after it was disclosed and sells when a sale of that stock is disclosed (or marks it today), then takes the dollar-weighted average (range midpoints) of each buy's return minus SPY's over the same days. It is not annualized: a buy held 18 months counts its whole gain. Dollar amounts are the midpoints of the disclosed ranges. Sales of stock bought before the ledger starts count toward Sold but not toward alpha."));
+  root.append(h("h2", {}, "By time period"), table([
+    { key: "label", label: "Period", nosort: true, render: (w) => [w.label, h("div", { class: "muted small" }, `since ${fmtDate(w.start)}`)] },
+    { key: "rank", label: "Rank", num: true, nosort: true, render: (w) => (w.rank ? `#${w.rank} of ${w.ranked_of}` : "—") },
+    { key: "alpha", label: "Alpha", num: true, nosort: true, cls: (w) => cls(w.alpha), render: (w) => pct(w.alpha, 0, true) },
+    { key: "return", label: "Return", num: true, nosort: true, render: (w) => pct(w.return, 0, true) },
+    { key: "beat", label: "Beat SPY", num: true, nosort: true, render: (w) => pct(w.beat_spy, 0) },
+    { key: "bought", label: "Bought", num: true, nosort: true, render: (w) => dollarRange(w.bought) },
+    { key: "sold", label: "Sold", num: true, nosort: true, render: (w) => dollarRange(w.sold) },
+    { key: "open", label: "Still held", num: true, nosort: true, hideNarrow: true, render: (w) => `${w.open_lots} of ${w.lots}` },
+  ], m.windows, { compact: true }));
+  root.append(h("h2", {}, "Alpha at each report (2-year window, as ranked)"), h("div", { class: "card" }, historyChart(m.history_fields, m.history, "Alpha")));
+
+  const lf = Object.fromEntries(m.lot_fields.map((n, i) => [n, i]));
+  const lots = m.lots.map((r) => ({ ...Object.fromEntries(m.lot_fields.map((n) => [n, r[lf[n]]])), alpha: r[lf.ret] != null && r[lf.spy] != null ? r[lf.ret] - r[lf.spy] : null }));
+  root.append(h("h2", {}, `Copied purchases (${lots.length})`), lots.length ? table([
+    { key: "disclosed", label: "Disclosed", render: (r) => legDate(r.disclosed) },
+    { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => (r.key ? stockLink(r.key, r.ticker) : r.ticker) },
+    { key: "hi", label: "Amount", num: true, render: (r) => amount(r.lo, r.hi) },
+    { key: "entry", label: "Bought", hideNarrow: true, render: (r) => legDate(r.entry) },
+    { key: "exit", label: "Sold", render: (r) => (r.open ? h("span", { class: "badge new" }, "held") : legDate(r.exit)) },
+    { key: "ret", label: "Return", num: true, cls: (r) => cls(r.ret), render: (r) => pct(r.ret, 0, true) },
+    { key: "spy", label: "SPY", num: true, hideNarrow: true, render: (r) => pct(r.spy, 0, true) },
+    { key: "alpha", label: "Alpha", num: true, cls: (r) => cls(r.alpha), render: (r) => pct(r.alpha, 0, true) },
+  ], lots, { sortKey: "disclosed", compact: true }) : h("p", { class: "empty" }, "No priced purchases."));
+
+  const tf = Object.fromEntries(m.trade_fields.map((n, i) => [n, i]));
+  const trades = m.trades.map((r) => Object.fromEntries(m.trade_fields.map((n) => [n, r[tf[n]]])));
+  root.append(h("h2", {}, `Every disclosed trade (${trades.length})`), table([
+    { key: "disclosed", label: "Disclosed", render: (r) => legDate(r.disclosed) },
+    { key: "traded", label: "Traded", hideNarrow: true, render: (r) => legDate(r.traded) },
+    { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => (STOCKS.has(r.ticker) ? stockLink(r.ticker) : r.ticker || "—") },
+    { key: "asset", label: "Asset", hideNarrow: true, render: (r) => h("span", { class: "muted small" }, (r.asset || "").slice(0, 48)) },
+    { key: "type", label: "Type", render: (r) => typeBadge(r.type) },
+    { key: "hi", label: "Amount", num: true, render: (r) => amount(r.lo, r.hi) },
+    { key: "owner", label: "Owner", hideNarrow: true, render: (r) => r.owner || "" },
+  ], trades, { sortKey: "disclosed", compact: true }));
+}
+
+async function fundPage(root, cik) {
+  const f = await load(`funds/${cik}.json`);
+  if (!f) return root.appendChild(h("p", { class: "empty" }, "No profile for this fund (profiles cover funds that have ranked in the top 25)."));
+  const now = f.windows.find((w) => w.key === "2y") || f.windows[0];
+  root.appendChild(h("div", { class: "page-head" }, h("div", {},
+    h("div", { class: "muted small" }, h("a", { href: "#/hedge" }, "Hedge funds"), " / fund"),
+    h("h1", {}, f.name),
+    h("p", { class: "muted small" }, `CIK ${f.cik} · `, h("a", { href: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${f.cik}&type=13F`, target: "_blank", rel: "noopener" }, "EDGAR filings"),
+      ` · as of ${fmtDate(f.as_of)} · the 13F ledger starts with filings from ${fmtDate(f.data_start)}`))));
+  const tile = (label, value, sub) => h("div", { class: "tile" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value), sub ? h("div", { class: "delta" }, sub) : null);
+  root.appendChild(h("div", { class: "tiles" },
+    tile("Rank (2y)", now.rank ? `#${now.rank}` : "—", now.rank ? `of ${now.ranked_of} ranked` : "not eligible now"),
+    tile("Alpha (2y)", pct(now.alpha, 0, true), `return ${pct(now.return, 0, true)} vs SPY ${pct(now.spy_return, 0, true)}`),
+    tile("13F book", money(f.latest.book), `${f.latest.positions} long positions`),
+    tile("Latest filing", quarterOf(f.latest.quarter), `filed ${fmtDate(f.latest.filed)}`),
+    tile("Changes", `${f.latest.new} new · ${f.latest.exits} exits`, "vs the previous quarter")));
+  root.appendChild(h("p", { class: "muted small", style: "max-width:780px" },
+    "Alpha buys each quarterly 13F book (long shares, value-weighted) at the close after it is filed and holds it to the close after the next filing; quarters compound, minus SPY over the same days. Only completed quarters count. Ranking needs 3+ quarters, 90% of the book priced, beating SPY in more than half of quarters, 5–150 positions and a book of at least $100M. The 13F book is the reported market value of long US positions, not total assets."));
+  root.append(h("h2", {}, "By time period"), table([
+    { key: "label", label: "Period", nosort: true, render: (w) => [w.label, h("div", { class: "muted small" }, `since ${fmtDate(w.start)}`)] },
+    { key: "rank", label: "Rank", num: true, nosort: true, render: (w) => (w.rank ? `#${w.rank} of ${w.ranked_of}` : w.periods ? "not eligible" : "—") },
+    { key: "alpha", label: "Alpha", num: true, nosort: true, cls: (w) => cls(w.alpha), render: (w) => pct(w.alpha, 0, true) },
+    { key: "return", label: "Return", num: true, nosort: true, render: (w) => pct(w.return, 0, true) },
+    { key: "spy", label: "SPY", num: true, nosort: true, render: (w) => pct(w.spy_return, 0, true) },
+    { key: "periods", label: "Quarters", num: true, nosort: true, render: (w) => w.periods },
+    { key: "hit", label: "Beat SPY", num: true, nosort: true, render: (w) => pct(w.hit_rate, 0) },
+    { key: "cov", label: "Priced", num: true, nosort: true, hideNarrow: true, render: (w) => pct(w.coverage, 0) },
+  ], f.windows, { compact: true }));
+  root.append(h("h2", {}, "Alpha at each report (2-year window, as ranked)"), h("div", { class: "card" }, historyChart(f.history_fields, f.history, "Alpha")));
+
+  const qf = Object.fromEntries(f.quarter_fields.map((n, i) => [n, i]));
+  const quarters = f.quarters.map((r) => ({ ...Object.fromEntries(f.quarter_fields.map((n) => [n, r[qf[n]]])), excess: r[qf.ret] != null ? r[qf.ret] - r[qf.spy] : null }));
+  root.append(h("h2", {}, "Quarterly books"), table([
+    { key: "filed", label: "Filed", render: (r) => legDate(r.filed) },
+    { key: "quarter", label: "Quarter", render: (r) => quarterOf(r.quarter) },
+    { key: "positions", label: "Positions", num: true },
+    { key: "book", label: "Book", num: true, render: (r) => [money(r.book), r.gated ? null : h("span", { class: "muted small", title: "Outside the 5–150 positions / $100M gates this quarter" }, " ✕")] },
+    { key: "ret", label: "Held-period return", num: true, cls: (r) => cls(r.ret), render: (r) => (r.ret == null ? h("span", { class: "muted small" }, r.exit ? "—" : "in progress") : pct(r.ret, 1, true)) },
+    { key: "spy", label: "SPY", num: true, hideNarrow: true, render: (r) => pct(r.spy, 1, true) },
+    { key: "excess", label: "vs SPY", num: true, cls: (r) => cls(r.excess), render: (r) => pct(r.excess, 1, true) },
+  ], quarters, { sortKey: "filed", compact: true }));
+
+  const hf = Object.fromEntries(f.holding_fields.map((n, i) => [n, i]));
+  const holdings = f.holdings.map((r) => Object.fromEntries(f.holding_fields.map((n) => [n, r[hf[n]]])));
+  const ef = Object.fromEntries(f.exit_fields.map((n, i) => [n, i]));
+  const exits = f.exits.map((r) => Object.fromEntries(f.exit_fields.map((n) => [n, r[ef[n]]])));
+  const posTable = (rows, isNew) => table([
+    { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => [r.key ? stockLink(r.key, r.ticker) : r.ticker || "—", isNew && r.new ? h("span", { class: "badge new", style: "margin-left:6px" }, "new") : null] },
+    { key: "issuer", label: "Issuer", hideNarrow: true, render: (r) => h("span", { class: "muted small" }, r.issuer || "") },
+    { key: "value", label: "Value", num: true, render: (r) => money(r.value) },
+    { key: "weight", label: "% of book", num: true, render: (r) => pct(r.weight, 1) },
+  ], rows, { sortKey: "weight", compact: true });
+  const grid = h("div", { class: "grid cols-2" });
+  grid.append(h("div", { class: "card" }, h("h3", {}, `Latest book · ${quarterOf(f.latest.quarter)} (top ${holdings.length})`), holdings.length ? posTable(holdings, true) : h("p", { class: "empty" }, "No positions.")),
+    h("div", { class: "card" }, h("h3", {}, `Exited since the previous quarter (${f.latest.exits})`), exits.length ? posTable(exits, false) : h("p", { class: "empty" }, "No exits.")));
+  root.append(h("h2", {}, "Holdings"), grid);
 }
 
 async function strategyPage(root, id) {
@@ -827,14 +956,14 @@ async function stockPage(root, key) {
   grid.appendChild(h("div", { class: "card" }, h("h3", {}, `Congress trades (${s.congress.length})`),
     s.congress.length ? table([
       { key: "disclosed", label: "Disclosed", render: (t) => fmtDate(t.disclosed) },
-      { key: "member", label: "Member", render: (t) => [t.member, t.top ? h("span", { class: "badge new", style: "margin-left:6px", title: "Top 10 by follow-the-disclosure alpha today" }, "top 10") : null] },
+      { key: "member", label: "Member", render: (t) => [memberLink(t.member_id, t.member), t.top ? h("span", { class: "badge new", style: "margin-left:6px", title: "Top 10 by follow-the-disclosure alpha today" }, "top 10") : null] },
       { key: "type", label: "Type", render: (t) => h("span", { class: `badge ${t.type === "buy" ? "up" : t.type === "sell" ? "down" : "flat"}` }, t.type) },
       { key: "amount_hi", label: "Amount", num: true, render: (t) => amount(t.amount_lo, t.amount_hi) },
     ], s.congress, { sortKey: "disclosed", compact: true }) : h("p", { class: "empty" }, "No disclosed trades in the ledger.")));
   grid.appendChild(h("div", { class: "card" }, h("h3", {}, `Held by top-200 13F funds (${s.n_funds || 0})`),
     s.funds?.length ? table([
       { key: "rank", label: "#", num: true },
-      { key: "name", label: "Fund", render: (r) => [r.name, r.new ? h("span", { class: "badge new", style: "margin-left:6px", title: `New in the filing of ${fmtDate(r.filed)}` }, "new") : null] },
+      { key: "name", label: "Fund", render: (r) => [fundLink(r.cik, r.name), r.new ? h("span", { class: "badge new", style: "margin-left:6px", title: `New in the filing of ${fmtDate(r.filed)}` }, "new") : null] },
       { key: "alpha", label: "Fund alpha", num: true, cls: (r) => cls(r.alpha), render: (r) => pct(r.alpha, 0, true) },
       { key: "weight", label: "% of book", num: true, render: (r) => pct(r.weight, 1) },
       { key: "value", label: "Value", num: true, hideNarrow: true, render: (r) => money(r.value) },
@@ -925,7 +1054,7 @@ async function route() {
     const target = x.getAttribute("href").slice(2);
     x.classList.toggle("here", target === page || (target === "reports" && ["report", "compare"].includes(page))
       || (target === "strategies" && page === "strategy" && !META.strategies.find((x) => x.id === a)?.options)
-      || (target === "options" && page === "strategy" && META.strategies.find((x) => x.id === a)?.options) || (target === "categories" && page === "category") || (target === "stocks" && page === "stock"));
+      || (target === "options" && page === "strategy" && META.strategies.find((x) => x.id === a)?.options) || (target === "categories" && page === "category") || (target === "stocks" && page === "stock") || (target === "congress" && page === "member") || (target === "hedge" && page === "fund"));
   });
   main.classList.add("loading");
   const root = h("div");
@@ -943,6 +1072,8 @@ async function route() {
     else if (page === "stock") await stockPage(root, a);
     else if (page === "congress") await smartPage(root, "congress", a);
     else if (page === "hedge") await smartPage(root, "hedge", a);
+    else if (page === "member") await memberPage(root, a);
+    else if (page === "fund") await fundPage(root, a);
     else if (page === "smart-money") location.hash = "#/congress";
     else if (page === "methodology") methodologyPage(root);
     else root.appendChild(h("p", { class: "empty" }, "Page not found."));
