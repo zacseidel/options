@@ -193,6 +193,15 @@ CREATE TABLE IF NOT EXISTS fund_periods (
     PRIMARY KEY (cik, entry)
 );
 
+-- Completed periods whose book had nothing we could price (no holding maps to a ticker), so the
+-- daily run doesn't refetch their sessions forever.
+CREATE TABLE IF NOT EXISTS fund_periods_unpriced (
+    cik           BIGINT NOT NULL,
+    entry         DATE NOT NULL,
+    checked_at    TIMESTAMP NOT NULL,
+    PRIMARY KEY (cik, entry)
+);
+
 -- Position weights and returns for funds that rank at some report date (alpha attribution).
 CREATE TABLE IF NOT EXISTS fund_period_positions (
     cik           BIGINT NOT NULL,

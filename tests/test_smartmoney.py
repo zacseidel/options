@@ -129,3 +129,13 @@ def test_rank_funds_uses_only_completed_periods_and_gates():
     before_last = hedge.rank_funds(periods, b, pd.Timestamp("2026-06-01"))
     assert list(before_last.index) == [10] and before_last.loc[10, "periods"] == 3     # 4th period still open
     assert 20 not in before_last.index                                                   # gated out (book < $100M)
+
+
+def test_missing_mask_keeps_columns_when_nothing_matches():
+    import pandas as pd
+    from market.smartmoney.hedge import _missing
+    frame = pd.DataFrame({"cik": [1], "entry": [pd.Timestamp("2025-01-02")], "exit": [pd.Timestamp("2025-04-01")]})
+    none_left = frame[_missing(frame, {(1, pd.Timestamp("2025-01-02"))})]
+    assert none_left.empty and list(none_left.columns) == ["cik", "entry", "exit"]
+    empty = frame.iloc[:0]
+    assert list(empty[_missing(empty, set())].columns) == ["cik", "entry", "exit"]

@@ -136,6 +136,12 @@ def _price_periods(periods: pd.DataFrame, b: Books, closes: dict) -> tuple[pd.Da
     return pd.DataFrame(rows), (pd.concat(pos_rows, ignore_index=True) if pos_rows else pd.DataFrame())
 
 
+def _missing(frame: pd.DataFrame, keys: set) -> np.ndarray:
+    """Row mask: (cik, entry) not in keys. A bool array, so an empty frame stays a row filter (a bare
+    empty list would select zero columns)."""
+    return np.array([(c, e) not in keys for c, e in zip(frame["cik"], frame["entry"])], dtype=bool)
+
+
 def sync_periods(b: Books | None = None) -> dict:
     """Price any completed period not yet stored; keep positions for funds that ever rank."""
     b = b or books()
@@ -143,15 +149,24 @@ def sync_periods(b: Books | None = None) -> dict:
     candidates = candidate_periods(b, sessions)
     con = connect()
     stored = con.execute("SELECT cik, entry FROM fund_periods").df()
-    have = set(zip(stored["cik"], pd.to_datetime(stored["entry"])))
-    todo = candidates[[(c, e) not in have for c, e in zip(candidates["cik"], candidates["entry"])]]
+    unpriced = con.execute("SELECT cik, entry FROM fund_periods_unpriced").df()
+    have = set(zip(stored["cik"], pd.to_datetime(stored["entry"]))) | set(zip(unpriced["cik"], pd.to_datetime(unpriced["entry"])))
+    todo = candidates[_missing(candidates, have)]
     closes = grouped_closes(set(todo["entry"]) | set(todo["exit"]))
     periods, positions = _price_periods(todo, b, closes)
+    # Sessions were there (SPY priced) but none of the book was: never retry it.
+    priced = set(zip(periods["cik"], pd.to_datetime(periods["entry"]))) if len(periods) else set()
+    dead = todo[_missing(todo, priced)
+                & np.array([BENCHMARK in closes.get(e, {}) and BENCHMARK in closes.get(x, {})
+                            for e, x in zip(todo["entry"], todo["exit"])], dtype=bool)]
     with transaction(con):
         if len(periods):
             con.register("_p", periods)
             con.execute("INSERT OR REPLACE INTO fund_periods BY NAME SELECT * FROM _p")
             con.unregister("_p")
+        if len(dead):
+            con.executemany("INSERT OR REPLACE INTO fund_periods_unpriced VALUES (?, ?, current_timestamp)",
+                            [[int(c), pd.Timestamp(e).date()] for c, e in zip(dead["cik"], dead["entry"])])
     all_periods = con.execute("SELECT * FROM fund_periods").df()
     con.close()
 
@@ -165,10 +180,10 @@ def sync_periods(b: Books | None = None) -> dict:
     stored_pos = con.execute("SELECT DISTINCT cik, entry FROM fund_period_positions").df()
     have_pos = set(zip(stored_pos["cik"], pd.to_datetime(stored_pos["entry"])))
     need = candidates[candidates["cik"].isin(eligible)]
-    need = need[[(c, e) not in have_pos for c, e in zip(need["cik"], need["entry"])]]
+    need = need[_missing(need, have_pos)]
     fresh = positions[positions["cik"].isin(eligible)] if len(positions) else positions
     fresh_keys = set(zip(fresh["cik"], pd.to_datetime(fresh["entry"]))) if len(fresh) else set()
-    rest = need[[(c, e) not in fresh_keys for c, e in zip(need["cik"], need["entry"])]]
+    rest = need[_missing(need, fresh_keys)]
     more_sessions = (set(rest["entry"]) | set(rest["exit"])) - set(closes)
     closes.update(grouped_closes(more_sessions))
     _, extra = _price_periods(rest, b, closes)
@@ -179,7 +194,7 @@ def sync_periods(b: Books | None = None) -> dict:
             con.execute("INSERT OR REPLACE INTO fund_period_positions BY NAME SELECT * FROM _q")
             con.unregister("_q")
     con.close()
-    return {"periods_priced": len(periods), "sessions_fetched": len(closes), "eligible_funds": len(eligible),
+    return {"periods_priced": len(periods), "unpriceable": len(dead), "sessions_fetched": len(closes), "eligible_funds": len(eligible),
             "position_rows": 0 if keep is None else len(keep)}
 
 
