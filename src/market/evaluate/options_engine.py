@@ -5,9 +5,10 @@ from the start of the options history. Windows are equal-capital and rebalanced 
 window opens or closes, like the stock engine, with each window's value taken from its own
 simulated path (continuing windows are rebalanced at their close mark, frictionlessly).
 
-Alongside the main result (1× spread haircut) every strategy also gets:
-  * the same strategy at 0× and 2× haircut (sensitivity: no bid/ask history on our plan);
-  * the base strategy in stock over exactly the same windows (`stock_same`).
+Fills are at the traded price (mid of the day's open and close; no spread haircut). Every base
+also gets its stock version over exactly the same windows (`stock_same`), and each option method
+records its stock-equivalent exposure at entry and a leverage-aware position size
+(half-Kelly ÷ exposure, capped at 100%).
 """
 
 from __future__ import annotations
@@ -22,7 +23,17 @@ from market.methods.hold_rules import HOLD_RULES, Trade, fill_price
 from market.methods.instruments.options import OptionData, simulate_window
 from market.data.options import option_root
 
-HAIRCUT_VARIANTS = (0.0, 2.0)
+FILL_HAIRCUT = 0.0          # trade price; the haircut machinery stays for sensitivity runs
+
+
+def entry_exposure(data: OptionData, t: Trade, res) -> float | None:
+    """Stock-equivalent exposure per unit of capital at entry (1.0 = the stock); None if no option opened."""
+    opened = [l for l in res.legs if l.open_date == t.entry_session]
+    if not any(l.kind != "S" for l in opened):
+        return None
+    spot = data.stock_fill(t.security_id, t.entry_session)
+    shares = sum(l.qty for l in opened if l.kind == "S")
+    return (shares + sum(l.qty * (l.delta or 0.0) for l in opened if l.kind != "S")) * spot
 
 
 def load_option_data(con, panel) -> OptionData | None:
@@ -56,7 +67,7 @@ def nav_from_paths(windows: list[tuple[Trade, object]], sessions: pd.DatetimeInd
         if s in entries or s in exits:
             for i in exits.get(s, []):
                 if i in active:
-                    cash += units.pop(i) * windows[i][1].exit_value
+                    cash += units.pop(i, 0.0) * windows[i][1].exit_value
                     active.discard(i)
             new = set(entries.get(s, []))
             active |= new
@@ -97,24 +108,32 @@ def evaluate_options(con, panel, mult: pd.DataFrame, strategies, base_trades: di
     stock_same_cache: dict[str, dict] = {}
     for strat in strategies:
         windows = [t for t in base_trades[strat.base] if t.entry_session >= start]
-        runs = {}
-        for m in (1.0, *HAIRCUT_VARIANTS):
-            runs[m] = [(t, simulate_window(data, t.security_id, option_root(t.ticker), t.entry_session,
-                                           t.exit_session, strat.method, m)) for t in windows]
-        main = runs[1.0]
+        main = [(t, simulate_window(data, t.security_id, option_root(t.ticker), t.entry_session,
+                                    t.exit_session, strat.method, FILL_HAIRCUT)) for t in windows]
         nav = nav_from_paths(main, sessions)
         if strat.base not in stock_same_cache:
             stock_nav = build_stock_nav(windows, start)
-            stock_same_cache[strat.base] = _summary(stock_nav["nav"], rf, spy_nav)
+            done = [t for t in windows if t.exit_session is not None]
+            rets = pd.Series([fill_price(panel, t.exit_session, t.security_id) / fill_price(panel, t.entry_session, t.security_id) - 1
+                              for t in done])
+            days = pd.Series([(t.exit_session - t.entry_session).days for t in done], dtype=float)
+            ts = trade_stats(rets, days, config()["evaluation"]["kelly_min_closed_trades"])
+            summary = _summary(stock_nav["nav"], rf, spy_nav)
+            summary.update({"half_kelly": ts.get("half_kelly"), "win_rate": ts.get("win_rate"), "stock_equiv": 1.0,
+                            "position": ts.get("half_kelly")})
+            stock_same_cache[strat.base] = summary
             out[f"{strat.base}.stock_same"] = {"nav": stock_nav, "stats": {}, "trades": None, "legs": None}
-        variants = {f"{m:g}x": _summary(nav_from_paths(runs[m], sessions)["nav"], rf, spy_nav) for m in HAIRCUT_VARIANTS}
 
         trade_rows, leg_rows = [], []
         n = len(main)
-        ev_sum = {k: 0.0 for k in ("option_opens", "no_contract", "assigned", "called_away", "model_fills", "premium", "rolls")}
+        ev_sum = {k: 0.0 for k in ("option_opens", "no_contract", "assigned", "called_away", "model_fills", "premium", "rolls", "stock_fallback")}
         windows_with = {"options": 0, "assigned": 0, "called_away": 0}
         window_years = 0.0
+        exposures = []
         for t, res in main:
+            x = entry_exposure(data, t, res)
+            if x is not None:
+                exposures.append(x)
             trade_id = f"{strat.id}:{t.ticker}:{t.signal_date}:{t.lot}"
             closed = res.exit_value is not None
             value = res.exit_value if closed else float(res.marks.iloc[-1])
@@ -149,7 +168,13 @@ def evaluate_options(con, panel, mult: pd.DataFrame, strategies, base_trades: di
         closed = frame[frame["status"] == "closed"] if n else frame
         hold_days = (pd.to_datetime(closed["exit_date"]) - pd.to_datetime(closed["entry_date"])).dt.days if n else pd.Series(dtype=float)
         stats = trade_stats(closed["return_total"], hold_days, config()["evaluation"]["kelly_min_closed_trades"]) if n else {}
+        exposure = float(pd.Series(exposures).median()) if exposures else None
+        hk = stats.get("half_kelly")
         stats.update({
+            "tier": strat.method.get("tier"),
+            "stock_equiv": round(exposure, 4) if exposure is not None else None,
+            "position": round(min(1.0, hk / exposure), 4) if hk is not None and exposure else None,
+            "stock_fallback": int(ev_sum["stock_fallback"]),
             "open_trades": int((frame["status"] == "open").sum()) if n else 0,
             "exposure": round(float((nav["positions"] > 0).mean()), 4),
             "windows": n,
@@ -160,7 +185,6 @@ def evaluate_options(con, panel, mult: pd.DataFrame, strategies, base_trades: di
             "missed_selections": int(ev_sum["no_contract"]),
             "rolls": int(ev_sum["rolls"]),
             "premium_yield": round(ev_sum["premium"] / window_years, 4) if window_years else None,
-            "haircut": variants,
             "stock_same": stock_same_cache[strat.base],
         })
         out[strat.id] = {"nav": nav, "stats": stats, "trades": frame, "legs": pd.DataFrame(leg_rows)}

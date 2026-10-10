@@ -7,10 +7,13 @@ Every window is simulated with $1 of capital (PLAN §7b, decisions D11–D13):
                 to the window's end (no more puts).
   covered_call  buy shares, sell calls on all of them; at expiry an OTM call expires and the next
                 is sold; an ITM call is called away and the shares are re-bought the next session.
-  leap          stock replacement: calls on capital / spot shares, the rest in T-bills; rolled
-                when DTE falls below `roll_below`.
+  leap          long calls sized by `sizing` (see _open_leap), the rest in T-bills; rolled at the
+                window's value when DTE falls below `roll_below`.
   diagonal      the LEAP above plus a short call on the same share count, re-sold at each expiry
                 (an ITM short call is settled at intrinsic, the LEAP is kept).
+
+With method["fallback"] == "stock", a LEAP / diagonal window that finds no qualifying call holds
+the stock instead of cash, and swaps it for the call on the first session one qualifies. method["short_prefer"] picks the short leg's expiry nearest that DTE.
 
 Timing: a contract is chosen on the session before it is opened (the data a report sees), then
 filled at the opening session's mid(open, close) with the spread haircut — sells at mid × (1 − h),
@@ -161,9 +164,14 @@ class OptionData:
         return self._iv_cache[key]
 
     def select(self, sid, root, sel: pd.Timestamp, open_day: pd.Timestamp, kind: str, target: float,
-               dte_lo: int, dte_hi: int, prefer_dte: int | None = None, relaxed: bool = False):
-        """The contract closest to `target` delta among liquid ones traded on `sel`, or None."""
-        key = ("pick", root, sel, open_day, kind, target, dte_lo, dte_hi, prefer_dte, relaxed)
+               dte_lo: int, dte_hi: int, prefer_dte: int | None = None, relaxed: bool = False,
+               tolerance: float | None = None):
+        """A liquid contract traded on `sel` near `target` delta, or None.
+
+        Without `tolerance`: the delta closest to target (in the expiry nearest `prefer_dte`, if given).
+        With `tolerance`: only strikes within ±tolerance of target qualify; the expiry nearest
+        `prefer_dte` that has one wins, and within it the most-traded qualifying strike."""
+        key = ("pick", root, sel, open_day, kind, target, dte_lo, dte_hi, prefer_dte, relaxed, tolerance)
         if key in self._iv_cache:
             return self._iv_cache[key]
         pick = None
@@ -173,11 +181,16 @@ class OptionData:
             liq = self.liquidity["leap" if relaxed else "short"]
             cand = rows[(rows["kind"] == kind) & dte.between(dte_lo, dte_hi)
                         & (rows["volume"] >= liq["min_volume"]) & (rows["transactions"] >= liq["min_transactions"])]
+            if tolerance is not None:
+                cand = cand[(cand["delta"] - target).abs() <= tolerance]
             if len(cand):
                 if prefer_dte is not None:
                     gap = ((cand["expiry"] - open_day).dt.days - prefer_dte).abs()
                     cand = cand[cand["expiry"] == cand.loc[gap.idxmin(), "expiry"]]
-                row = cand.iloc[(cand["delta"] - target).abs().argsort().iloc[0]]
+                if tolerance is not None:
+                    row = cand.loc[cand["volume"].idxmax()]
+                else:
+                    row = cand.iloc[(cand["delta"] - target).abs().argsort().iloc[0]]
                 pick = {"contract": (root, row["expiry"], kind, float(row["strike"])), "iv": float(row["iv"]),
                         "delta": float(row["delta"])}
         self._iv_cache[key] = pick
@@ -228,8 +241,9 @@ class Book:
         self.closed: list[Leg] = []
         self.share_leg: Leg | None = None
         self.value_before_open = 0.0
+        self.on_fallback = False          # holding the stock until a qualifying call appears
         self.events = {"option_opens": 0, "no_contract": 0, "assigned": 0, "called_away": 0,
-                       "model_fills": 0, "premium": 0.0, "rolls": 0}
+                       "model_fills": 0, "premium": 0.0, "rolls": 0, "stock_fallback": 0}
 
     # -- prices
     def option_mid(self, leg: Leg, s) -> float:
@@ -306,13 +320,13 @@ def _short_pick(book: Book, sel, s):
     m, kind = book.m, SHORT_KINDS[book.m["instrument"]]
     target = m["short_delta"] if m["instrument"] == "diagonal" else m["delta"]
     lo, hi = m["short_dte"]
-    return book.d.select(book.sid, book.root, sel, s, kind, target, lo, hi)
+    return book.d.select(book.sid, book.root, sel, s, kind, target, lo, hi, prefer_dte=m.get("short_prefer"))
 
 
 def _leap_pick(book: Book, sel, s):
     ld = book.m["leap_dte"]
     return book.d.select(book.sid, book.root, sel, s, "C", book.m["delta"], ld["min"], ld["max"],
-                         prefer_dte=ld["prefer"], relaxed=True)
+                         prefer_dte=ld["prefer"], relaxed=True, tolerance=book.m.get("delta_tol"))
 
 
 def _open_short(book: Book, sel, s) -> bool:
@@ -335,11 +349,27 @@ def _open_short(book: Book, sel, s) -> bool:
 
 
 def _open_leap(book: Book, sel, s, capital: float) -> bool:
+    """Buy the long call with `capital` of the window's value behind it. Sizing (method["sizing"]):
+      notional  calls on capital / spot shares (exposure ≈ delta × stock), the rest in T-bills
+      delta     calls on capital / (spot × delta) shares (exposure ≈ the stock), the rest in T-bills
+      <float>   that fraction of capital spent on calls (1.0 = all in), the rest in T-bills
+    """
     pick = _leap_pick(book, sel, s)
     if pick is None:
         book.events["no_contract"] += 1
         return False
-    qty = capital / book.d.stock_fill(book.sid, s)          # stock replacement: notional = capital
+    sizing = book.m.get("sizing", "notional")
+    spot = book.d.stock_fill(book.sid, s)
+    if sizing == "notional":
+        qty = capital / spot
+    elif sizing == "delta":
+        qty = capital / (spot * pick["delta"])
+    else:
+        price = book.fill(Leg(pick["contract"], 1.0, s, 0.0, pick["delta"], pick["iv"]), s, buying=True)
+        if price <= 0:
+            book.events["no_contract"] += 1
+            return False
+        qty = capital * float(sizing) / price
     book.open_option(pick, qty, s)
     return True
 
@@ -358,6 +388,12 @@ def _start(book: Book, sel, s) -> bool:
         ok = _open_leap(book, sel, s, book.cash)
         if ok and inst == "diagonal":
             _open_short(book, sel, s)
+        elif not ok and book.m.get("fallback") == "stock":
+            if not book.shares:
+                book.buy_shares(book.cash, s)         # no qualifying call: hold the stock meanwhile
+                book.events["stock_fallback"] += 1
+            book.on_fallback = True
+            return True
         return ok
     raise ValueError(inst)
 
@@ -409,6 +445,10 @@ def simulate_window(data: OptionData, sid: str, root: str, entry: pd.Timestamp, 
             continue
         if pending:
             pending = not _start(book, prev, s)
+        elif book.on_fallback and _leap_pick(book, prev, s) is not None:
+            book.sell_all_shares(s, "switch to option")   # a qualifying call appeared: swap the stock for it
+            book.on_fallback = False
+            _start(book, prev, s)
         elif rebuy_shares:
             book.value_before_open = book.cash
             book.buy_shares(book.cash, s)
@@ -416,15 +456,16 @@ def simulate_window(data: OptionData, sid: str, root: str, entry: pd.Timestamp, 
             if not _open_short(book, prev, s):
                 pass                                          # retry the call next session
         elif inst in ("csp", "covered_call", "diagonal") and not any(l.qty < 0 for l in book.legs) \
-                and not (inst == "csp" and book.shares):
+                and not (inst == "csp" and book.shares) \
+                and not (inst == "diagonal" and not any(l.qty > 0 for l in book.legs)):
             book.value_before_open = book.cash + book.shares * data.spot_mid(sid, s)
             _open_short(book, prev, s)                        # re-sell after an expiry (or a miss)
-        # LEAP roll
+        # LEAP roll: re-establish the long call at the window's current value
         for leg in [l for l in book.legs if l.qty > 0]:
             if (leg.contract[1] - s).days < method["leap_dte"]["roll_below"]:
-                capital = leg.qty * book.d.stock_fill(sid, s)
                 book.close_option(leg, s, "roll")
                 book.events["rolls"] += 1
+                capital = book.cash + sum(l.qty * book.option_mark(l, s) for l in book.legs)
                 if not _open_leap(book, prev, s, capital):
                     for other in list(book.legs):             # no replacement: flatten, retry next session
                         book.close_option(other, s, "roll")

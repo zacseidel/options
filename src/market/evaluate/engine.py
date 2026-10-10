@@ -56,19 +56,51 @@ def load_strategies(path=None) -> list[Strategy]:
     return out
 
 
+def method_label(m: dict) -> str:
+    """Readable name for an option method, e.g. "LEAP 12m Δ0.60, 50% in calls"."""
+    inst = m["instrument"]
+    if inst == "csp":
+        lo, hi = m["short_dte"]
+        return f"Cash-secured put Δ{m['delta']:.2f}, {lo}–{hi}d"
+    if inst == "covered_call":
+        return f"Covered call Δ{m['delta']:.2f}, ~{m.get('short_prefer', m['short_dte'][1])}d"
+    sizing = m.get("sizing", "notional")
+    size = {"delta": "match stock", "notional": "notional"}.get(sizing) or f"{float(sizing):.0%} in calls"
+    if inst == "diagonal":
+        return f"Diagonal {m['expiry']} Δ{m['delta']:.2f} / short Δ{m['short_delta']:.2f}"
+    return f"LEAP {m['expiry']} Δ{m['delta']:.2f}, {size}"
+
+
 def option_strategies(spec: dict | None, by_id: dict[str, Strategy]) -> list[Strategy]:
-    """Expand `option_methods` (bases × methods) into strategies that reuse each base's windows."""
+    """Expand `option_methods` (per base: a list of methods) into strategies reusing each base's windows."""
     if not spec:
         return []
     out = []
-    for base_id in spec["bases"]:
+    for base_id, methods in spec["bases"].items():
         base = by_id[base_id]
-        short_dte = spec["short_dte"].get(base_id, spec["short_dte"]["default"])
-        for m in spec["methods"]:
-            method = {**m, "short_dte": list(short_dte), "leap_dte": dict(spec["leap_dte"])}
+        for m in methods:
+            method = {**m, "short_dte": list(spec["short_dte"].get(base_id, spec["short_dte"]["default"])),
+                      "leap_dte": dict(spec["leap_dte"][m.get("expiry", "12m")])}
+            if m["instrument"] in ("covered_call", "diagonal"):
+                method.update({"short_dte": list(spec["call_dte"]["short_dte"]),
+                               "short_prefer": spec["call_dte"]["short_prefer"]})
+            if m["instrument"] in ("leap", "diagonal"):
+                method.update({"delta_tol": spec["delta_tol"], "fallback": "stock"})
+            method["label"] = method_label(method)
             out.append(Strategy(f"{base_id}.{m['id']}", base.category, base.slot, base.hold, base.params,
                                 m["instrument"], base.visible, method, base_id))
     return out
+
+
+def prune_retired_options(con, strategies: list[Strategy]) -> None:
+    """Drop stored results of option methods no longer in strategies.yaml (ids `<base>.<method>`)."""
+    bases = {s.base for s in strategies if s.base}
+    keep = {s.id for s in strategies} | {f"{b}.stock_same" for b in bases}
+    for table in ("trades", "option_legs", "nav_daily", "strategy_metrics"):
+        stored = [r[0] for r in con.execute(f"SELECT DISTINCT strategy_id FROM {table}").fetchall()]
+        retired = [sid for sid in stored if sid not in keep and any(sid.startswith(b + ".") for b in bases)]
+        if retired:
+            con.execute(f"DELETE FROM {table} WHERE strategy_id IN ({','.join('?' * len(retired))})", retired)
 
 
 def dividend_multiplier(panel: Panel) -> pd.DataFrame:
@@ -251,6 +283,8 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
     ids = [r["strategy_id"] for r in metric_rows]
     replace_rows(con, "strategy_metrics", pd.DataFrame(metric_rows),
                  f"strategy_id IN ({','.join('?' * len(set(ids)))})", sorted(set(ids)))
+    if not strategy_ids:
+        prune_retired_options(con, everything)
     con.close()
     return {"seconds": round(time.time() - t0, 1), "strategies": len(summary)}
 

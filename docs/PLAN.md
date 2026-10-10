@@ -13,10 +13,10 @@ Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions ar
 | Categories | Momentum: S&P 500 / S&P 400 / Megacap Leaders, S&P 500 / S&P 400 Rank Momentum (3/6/12 and Fast 1/3/6) · Reversion: Megacap Laggards, Munger Dip · Congress: Top-5 Buys, Top-5 Holdings (from 2025-01) · Hedge funds: Skilled-Fund Buys, Alpha Drivers (from mid-2025) |
 | Smart money | Point-in-time member and fund rankings recomputed from the raw ledgers (`market.smartmoney`); 13F follow-the-filing periods priced once and stored (`fund_periods`); leaderboards per report date (`entity_scores`) |
 | Options | Option panel (`option_bars`, ~6.1M rows, ~60 MB) for 166 names, kept only around held windows, 2024-10-08 → now; daily step `options` |
-| Evaluation | 22 stock strategies + 28 option strategies (4 bases × CSP −0.30/−0.45, CC 0.15/0.30, LEAP 0.80/0.90, diagonal), each at 0×/1×/2× haircut and vs stock over the same windows |
+| Evaluation | 22 stock strategies + 12 tracked option strategies (3 per base: Defensive / Balanced / Aggressive, picked from a 25-method grid, `market.evaluate.option_grid`), filled at the traded price and compared with the stock over the same windows |
 | Site | Overview, Reports, **Options** (separate page; option strategies kept off the main lists) (grouped by section, with Congress / 13F digests), Strategies, Categories, Congress, Hedge funds, Stocks, Methodology |
 | Ops | `python -m market.ops.run` daily: disclosures (House/Senate PTRs + EDGAR daily 13F index) → bars → fund periods → signals → … → export; launchd files in `ops/launchd/` (not yet installed) |
-| Next | Calibrate the LEAP / long-dated spread haircut (it decides the LEAP results); publish; port the smartmoney fetchers (its 13F ledger keeps only a 2-year window); backfill older 13Fs from EDGAR to lengthen the 13F history |
+| Next | Re-run the option grid periodically; publish; port the smartmoney fetchers (its 13F ledger keeps only a 2-year window); backfill older 13Fs from EDGAR to lengthen the 13F history |
 
 ## 0. Decisions so far
 
@@ -34,7 +34,10 @@ Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions ar
 | D10 | **Option set** = option watchlists + names entering `mom12_sp500.top5`, `rankmom_sp500.top5`, `mom12_megacap.top5`, `laggards_mega10.top2` (the categories whose Sharpe beats SPY's); ~99 names over 2 years |
 | D11 | **Option legs close when the stock would**: the same session the stock exit fills (report-driven exits). An open short put is bought back then, not left to run |
 | D12 | **Assigned puts**: shares are held until the name leaves the slot, then sold with the stock exit |
-| D13 | **Diagonal**: long call Δ 0.80, DTE ≥ 365 (prefer ~540) + short call Δ 0.30, DTE 30–45, short leg rolled at expiry; everything closes at window end |
+| D13 | **Diagonal**: long call Δ 0.80 (6m: first expiry ≥ 180d) + short call (~21d, Δ 0.20 / 0.30), short leg re-sold at expiry; everything closes at window end |
+| D14 | **Option fills at the traded price** (mid of the day's open and close), no spread haircut: there is no bid/ask history, and the haircut, not the method, decided the LEAP results |
+| D15 | **Long calls**: expiry = first ≥ 180d / ≥ 365d with a traded strike within ±0.05 Δ (most-traded); sizing = match stock, 50% or 100% of capital in calls; no qualifying call → hold the stock until one appears |
+| D16 | **Tracked option set**: 3 methods per base (Defensive / Balanced / Aggressive) chosen from the grid on 2026-10-09; half-Kelly stays the per-trade 0.5·(p − q/b), shown with position = half-Kelly ÷ stock-equivalent exposure |
 
 ---
 
@@ -75,11 +78,10 @@ signal work, just the option legs for windows that already exist.
 3. **Stock fills:** a signal known after the close of day D fills on the next session at VWAP,
    falling back to mid(open, close). Technical exits are decided on a completed close and filled
    the next session.
-4. **Option fills:** the next session's mid(open, close) from the option day bar, with a
-   **spread haircut**: sell at mid × (1 − h), buy at mid × (1 + h). There are no historical quotes
-   on 15-min-delayed plans. ▸ DEFAULT h = max(3 %, $0.05 / mid), widened for DTE > 180 or |Δ| < 0.15.
-   Every options result is also shown at 0× and 2× haircut. Live snapshots record bid/ask when
-   available so h can be calibrated over time.
+4. **Option fills:** the next session's traded price, mid(open, close) from the option day bar, with
+   no spread haircut (D14). There are no historical quotes on 15-min-delayed plans. The haircut
+   machinery (h = max(3 %, $0.05 / mid), widened past 180 DTE or |Δ| < 0.15) remains for sensitivity
+   runs; live snapshots can record bid/ask so a cost can be calibrated later.
 5. **Total return:** store unadjusted bars plus splits and dividends, adjust on read with a small
    cumulative-factor table, and credit dividends on stock legs.
 6. Securities are keyed by `security_id` (FIGI-based), with `ticker_history` mapping tickers to
@@ -231,22 +233,22 @@ option method reuses its base stock strategy's windows; every leg closes the ses
 | Instrument | Entry inside a window | Management | Window ends | Capital & return basis |
 |---|---|---|---|---|
 | `stock` | buy at window start | dividends credited | sell | cost |
-| `csp` | sell put Δ −0.30 / −0.45; DTE 14–21 (momentum) or 30–45 (laggards) | OTM expiry → sell the next put the next session; ITM → assigned, shares held to window end, no more puts (D12) | buy back the put; sell any shares | collateral = strike × shares; cash earns 4 % |
-| `covered_call` | buy shares + sell call Δ 0.15 / 0.30, same DTE | OTM expiry → sell the next call; called away → re-buy shares and sell a call the next session | buy back the call, sell shares | stock cost |
-| `leap` | buy call Δ 0.80 / 0.90, DTE 365–800 (expiry nearest 540) | roll below 180 DTE | sell the call | stock replacement: calls on capital ÷ price shares, rest in T-bills |
-| `diagonal` | the LEAP Δ 0.80 + short call Δ 0.30 on the same shares, short DTE as above (D13) | short re-sold each expiry; ITM short settled at intrinsic | close both | as LEAP |
+| `csp` | sell put at the target Δ; any expiry 14–21 DTE (momentum) or 30–45 (laggards) | OTM expiry → sell the next put the next session; ITM → assigned, shares held to window end, no more puts (D12) | buy back the put; sell any shares | collateral = strike × shares; cash earns 4 % |
+| `covered_call` | buy shares + sell call at the target Δ, expiry nearest 21 DTE (14–28) | OTM expiry → sell the next call; called away → re-buy shares and sell a call the next session | buy back the call, sell shares | stock cost |
+| `leap` | buy call at the target Δ (±0.05, most-traded strike), first expiry ≥ 180 / ≥ 365 DTE (D15) | roll at the window's value below 120 / 180 DTE; no qualifying call → hold the stock, swap in when one appears | sell the call | `sizing`: delta (moves like the stock), 0.5 / 1.0 of capital in calls; rest in T-bills |
+| `diagonal` | 6m Δ 0.80 call sized to match the stock + ~21d short call on the same shares (D13) | short re-sold each expiry; ITM short settled at intrinsic | close both | as LEAP |
 
-Why these deltas: momentum holds a median ~1 week and earns from a fat right tail (avg win ≈ 2× avg
-loss). Short calls sell that tail, so covered calls use a low delta (0.15, 0.30 for comparison); puts
-use more delta than the classic −0.25 because the signal is bullish (−0.30, −0.45 near the money).
-Short-dated (14–21 DTE) legs decay ~2× faster per week than 30–45 DTE ones, which matters when
-buy-back-at-exit pays the spread twice. LEAPs pay a doubled haircut, so a deep (0.90) variant is
-tested beside 0.80.
+Method choice comes from the grid (`python -m market.evaluate.option_grid` → `docs/options_grid.md`):
+25 methods × 4 bases over the options history. Findings (2026-10-09): 12m Δ0.60 calls add the most
+return at a Sharpe at or above the stock's; Δ−0.20 puts are the low-risk way in; covered calls never
+beat the stock because momentum's profit is the right tail a call sells; 6m all-in calls have the
+biggest numbers and the worst Sharpe (drops of 69–80%).
 
 **Contract selection.** On the session before the fill (the report's as-of close), read candidates from
 `option_bars` (the traded contracts in band). Compute IV and Δ with Black-Scholes using the T-bill rate and dividend yield.
-Choose the contract closest to the target Δ that has volume ≥ ▸ 10 and transactions ≥ ▸ 3. If none
-qualifies, skip the leg and record why. Live entries use the snapshot's own greeks.
+Short legs: the contract closest to the target Δ with volume ≥ ▸ 10 and transactions ≥ ▸ 3 (nearest
+21 DTE for calls). Long calls: volume ≥ 2, Δ within ±0.05 of target, the most-traded such strike in the
+first qualifying expiry. If none qualifies, skip the leg and record why. Live entries use the snapshot's own greeks.
 
 **Assignment model.** Puts and calls are settled at expiry against the underlying's close. Early
 assignment is modelled only for covered calls deep in the money just before an ex-dividend date

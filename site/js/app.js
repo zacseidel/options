@@ -495,7 +495,7 @@ async function strategyPage(root, id) {
       tile("Half-Kelly", pct(all.half_kelly, 0), all.half_kelly == null ? "needs ≥20 closed trades" : "historical, not advice"));
     if (s.options) tiles.append(
       tile("Stock, same windows", pct(all.stock_same?.cagr), `Sharpe ${num(all.stock_same?.sharpe)} · DD ${pct(all.stock_same?.max_drawdown, 0)}`),
-      tile("Spread sensitivity", `${pct(all.haircut?.["0x"]?.cagr)} / ${pct(all.haircut?.["2x"]?.cagr)}`, "CAGR at 0× / 2× haircut"),
+      tile("Exposure · position", `${num(all.stock_equiv)}× · ${pct(all.position, 0)}`, "stock-equivalent at entry · half-Kelly ÷ exposure"),
       tile("Premium collected", pct(all.premium_yield, 1), "per year of capital deployed"),
       tile("Assigned · called", `${pct(all.assignment_rate, 0)} · ${pct(all.called_away_rate, 0)}`, `options on ${pct(all.option_coverage, 0)} of windows`));
 
@@ -567,44 +567,106 @@ function legSummary(legs) {
   }, l.kind === "S" ? "shares" : contractLabel(l), l.reason && l.reason !== "window end" ? h("span", { class: "muted" }, ` ${l.reason}`) : null)));
 }
 
+// "Better than the stock" = higher Sharpe over exactly the same windows; within ±0.05 counts as a tie.
+const SHARPE_TIE = 0.05;
+const TIERS = ["Defensive", "Balanced", "Aggressive"];
+
+function vsStock(mm, stock) {
+  const out = [];
+  if (mm.sharpe != null && stock.sharpe != null) {
+    const d = mm.sharpe - stock.sharpe;
+    out.push(d >= SHARPE_TIE ? ["up", "Higher Sharpe"] : d <= -SHARPE_TIE ? ["down", "Lower Sharpe"] : ["flat", "Sharpe ≈ stock"]);
+  }
+  if (mm.cagr != null && stock.cagr != null && mm.cagr > stock.cagr) out.push(["up", "More return"]);
+  if (mm.max_drawdown != null && stock.max_drawdown != null && mm.max_drawdown - stock.max_drawdown >= 0.05) out.push(["up", "Smaller drop"]);
+  return out;
+}
+const beatsStock = (mm, stock) => mm.sharpe != null && stock.sharpe != null && mm.sharpe - stock.sharpe >= SHARPE_TIE;
+const badges = (list) => h("span", { class: "vs" }, list.map(([c, t]) => h("span", { class: `badge ${c}` }, t)));
+
+// Takeaways from the option method grid run of 2026-10-09 (docs/options_grid.md, all 25 methods × 4 strategies).
+const OPTION_PATTERNS = [
+  ["12-month calls at Δ0.60 are the best way to add return.", " On S&P 500 Leaders, 50% of capital in them made 166% a year at Sharpe 1.49 (stock 101%, 1.23) with about the stock's worst drop; 100% in them made 365% at Sharpe 1.54 but fell 57%. Rank Momentum shows the same at a smaller margin."],
+  ["Cash-secured puts at Δ−0.20 are the low-risk way in.", " Worst drops of 10–20% against the stock's 39–44%, and a higher Sharpe on all three momentum strategies (1.80 vs 1.14 on Rank Momentum) — but only about a third of the stock's return."],
+  ["Covered calls never beat the stock.", " At ~21 days and Δ0.10–0.50 they at best tie its Sharpe. Momentum profits come from a few names that run hard, which is exactly the upside a call sells; on Megacap Laggards (no big runs) Δ0.10 ties at 1.50 vs 1.51. None are tracked."],
+  ["Six-month calls with all capital in them look biggest and are worst.", " 266–534% a year, but Sharpe below the stock on three of four strategies and worst drops of 69–80%. Not tracked."],
+  ["Megacap Leaders is weak whatever the method.", " The stock version's Sharpe is 0.82; the best option method reaches 0.97. Options don't fix a weak signal."],
+  ["On Megacap Laggards nothing beats the stock by much.", " Its stock Sharpe is already 1.51. The diagonal ties it while cutting the worst drop from 19% to 14%; calls add return at a lower Sharpe."],
+  ["Leverage doesn't move half-Kelly; position size does.", " Win rate and payoff hardly change when every win and loss is scaled up, so half-Kelly stays near the stock's. Divide by exposure: 100% in 12-month calls (≈2.6× the stock) sizes at about 7% of a portfolio per position, against 16% for the stock."],
+];
+const OPTION_CAVEATS = "Two years of option history in a strong market; fills at the traded price with no spread, which flatters the leveraged methods most; for 24–28% of S&P 500 holdings no 12-month call with a traded strike near the target delta existed, and those holdings held the stock.";
+
 async function optionsPage(root) {
   const data = await load("options.json");
   root.appendChild(h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Options"),
-    h("p", { class: "lede" }, "Each option method runs on its base strategy's own entries and exits, with the stock version over exactly the same windows for comparison. Option history starts ",
-      data ? fmtDate(data.first_session) : "—", " (about 2 years), so these windows are shorter than the stock pages'.")),
+    h("p", { class: "lede" }, "Three tracked option methods for each of four strategies — one defensive, one balanced, one aggressive — each run on the strategy's own entries and exits and compared with holding the stock over exactly the same windows. Option history starts ",
+      data ? fmtDate(data.first_session) : "—", ".")),
   ));
   if (!data || !data.bases?.length) return root.appendChild(h("p", { class: "empty" }, "No option results yet."));
-  root.appendChild(h("p", { class: "muted small", style: "max-width:780px" },
-    "Contracts are chosen on the report's as-of close (Black-Scholes delta from the day's option close) and filled at the next session's mid(open, close), selling at mid × (1 − h) and buying at mid × (1 + h), h = max(3%, $0.05 / mid), doubled past 180 DTE or below |Δ| 0.15. Every leg closes the session the stock would exit. ",
-    "Cash earns 4% (T-bills). LEAPs replace the stock: calls on the window's capital ÷ price shares, the rest in cash. Main results use 1× haircut; 0× and 2× show how much the spread assumption matters."));
+  const sessions = await load("sessions.json");
+  const all = (r) => r.metrics?.all || {};
+
+  // ---- summary: every tracked method against its stock
+  const summary = h("div", { class: "opt-summary" });
+  for (const base of data.bases) {
+    const stock = base.stock_same.all || {};
+    const cell = (title, label, mm, extra, beat) => h("div", { class: `opt-cell${beat ? " beats" : ""}` },
+      h("div", { class: "muted small" }, title), h("div", { class: "opt-label" }, label),
+      h("div", { class: "opt-nums" }, `${pct(mm.cagr, 0)} / yr · Sharpe ${num(mm.sharpe)} · worst ${pct(mm.max_drawdown, 0)}`),
+      h("div", { class: "muted small" }, `½-Kelly ${pct(mm.half_kelly, 0)} · position ${pct(mm.position, 0)}`), extra);
+    const methods = TIERS.map((t) => base.methods.find((x) => x.tier === t)).filter(Boolean);
+    summary.append(h("div", { class: "opt-row" },
+      h("div", { class: "opt-name" }, h("a", { href: `#/strategy/${base.id}` }, base.name)),
+      cell("Stock, same windows", "Stock", stock, null, false),
+      ...methods.map((x) => cell(x.tier, h("a", { href: `#/strategy/${x.id}` }, x.label), all(x), badges(vsStock(all(x), stock)), beatsStock(all(x), stock)))));
+  }
+  root.append(h("h2", {}, "Tracked methods vs the stock"),
+    h("p", { class: "muted small", style: "max-width:780px" }, "Highlighted = a higher Sharpe than the stock over the same windows (by 0.05 or more), i.e. better risk-adjusted. Badges also flag more total return and a worst drop at least 5 points smaller."),
+    summary);
+
+  // ---- patterns
+  root.append(h("h2", {}, "Patterns"),
+    h("p", { class: "muted small" }, "From the full method grid (25 methods × 4 strategies) run on Oct 9, 2026; numbers are that run's two-year results. Re-run with python -m market.evaluate.option_grid."),
+    h("ul", { class: "patterns" }, OPTION_PATTERNS.map(([lead, rest]) => h("li", {}, h("strong", {}, lead), rest))),
+    h("p", { class: "muted small", style: "max-width:780px" }, h("strong", {}, "Caveats. "), OPTION_CAVEATS));
+
+  // ---- how to read
+  root.append(h("details", { class: "opt-help" }, h("summary", {}, "How to read sizing, exposure and position"),
+    h("p", {}, "For $10,000 and a $100 stock: the stock is 100 shares. ", h("strong", {}, "Match stock"), " buys enough calls to move like 100 shares (at Δ0.60, 167 shares' worth, about $2,500) and keeps the rest in T-bills. ",
+      h("strong", {}, "50% in calls"), " spends $5,000 on calls (moves like ~200 shares); ", h("strong", {}, "100% in calls"), " spends all $10,000 (~400 shares) and can lose it all."),
+    h("p", {}, h("strong", {}, "Exposure"), " is how much stock a position moves like per dollar at entry (1.0× = the stock; a Δ−0.20 put ≈ 0.22×). ",
+      h("strong", {}, "Half-Kelly"), " is the site's 0.5 × (p − q/b) on closed trades. ", h("strong", {}, "Position"), " = half-Kelly ÷ exposure (capped at 100%): the share of a portfolio per position once leverage is counted."),
+    h("p", {}, "Cash-secured puts use any expiry 14–21 days out (30–45 for Megacap Laggards); diagonal short calls the expiry nearest 21 days; 6m / 12m calls the first expiry at least 180 / 365 days out with a traded strike within ±0.05 of the target delta, preferring the most-traded strike. Contracts are chosen on the report's as-of close and filled at the next session's traded price (mid of open and close). Every leg closes the session the stock would exit; cash earns 4%.")));
+
+  // ---- per base
   for (const base of data.bases) {
     const section = h("section", { class: "options-base" });
     root.appendChild(section);
+    const stock = base.stock_same.all || {};
     let pick = base.methods[0].method;
-    const sessions = await load("sessions.json");
     const dates = sessions.slice(base.start, base.start + base.series.SPY.length);
     const chartBox = h("div", { class: "card" });
     const picksBox = h("div");
-    const stockRow = { id: `${base.id}.stock_same`, label: "Stock (same windows)", stock: true, metrics: { all: { ...base.stock_same.all } } };
+    const stockRow = { id: `${base.id}.stock_same`, label: "Stock (same windows)", stock: true, tier: "", metrics: { all: stock } };
     const rows = [stockRow, ...base.methods];
-    const m = (r) => r.metrics.all || {};
+    const m = all;
     const cols = [
+      { key: "tier", label: "Tier", sort: (r) => (r.stock ? -1 : TIERS.indexOf(r.tier)), render: (r) => r.tier || "" },
       { key: "label", label: "Method", sort: (r) => r.label, cls: () => "name-col", render: (r) => r.stock ? h("a", { href: `#/strategy/${base.id}` }, r.label) : h("a", { href: `#/strategy/${r.id}` }, r.label) },
       { key: "cagr", label: "CAGR", num: true, sort: (r) => m(r).cagr, cls: (r) => cls(m(r).cagr), render: (r) => pct(m(r).cagr) },
-      { key: "total", label: "Total", num: true, sort: (r) => m(r).total_return, render: (r) => pct(m(r).total_return, 0) },
+      { key: "total", label: "Total", num: true, hideNarrow: true, sort: (r) => m(r).total_return, render: (r) => pct(m(r).total_return, 0) },
       { key: "sharpe", label: "Sharpe", num: true, sort: (r) => m(r).sharpe, render: (r) => num(m(r).sharpe) },
       { key: "dd", label: "Max DD", num: true, sort: (r) => m(r).max_drawdown, render: (r) => pct(m(r).max_drawdown, 0) },
       { key: "vol", label: "Vol", num: true, hideNarrow: true, sort: (r) => m(r).volatility, render: (r) => pct(m(r).volatility, 0) },
-      { key: "h0", label: "CAGR 0× / 2×", num: true, hideNarrow: true, title: "CAGR with no spread haircut / with double the haircut", sort: (r) => m(r).haircut?.["0x"]?.cagr,
-        render: (r) => (r.stock ? "" : `${pct(m(r).haircut?.["0x"]?.cagr, 0)} / ${pct(m(r).haircut?.["2x"]?.cagr, 0)}`) },
-      { key: "win", label: "Win %", num: true, sort: (r) => m(r).win_rate, render: (r) => (r.stock ? "" : pct(m(r).win_rate, 0)) },
-      { key: "prem", label: "Premium / yr", num: true, hideNarrow: true, title: "Short premium collected per year of capital deployed", sort: (r) => m(r).premium_yield, render: (r) => (r.stock || !m(r).premium_yield ? "" : pct(m(r).premium_yield, 0)) },
-      { key: "assign", label: "Assigned · called", num: true, hideNarrow: true, sort: (r) => (m(r).assignment_rate || 0) + (m(r).called_away_rate || 0),
-        render: (r) => (r.stock ? "" : r.instrument === "csp" ? pct(m(r).assignment_rate, 0) : r.instrument === "covered_call" ? pct(m(r).called_away_rate, 0) : "") },
+      { key: "win", label: "Win %", num: true, hideNarrow: true, sort: (r) => m(r).win_rate, render: (r) => pct(m(r).win_rate, 0) },
+      { key: "hk", label: "½-Kelly", num: true, sort: (r) => m(r).half_kelly, render: (r) => pct(m(r).half_kelly, 0) },
+      { key: "exp", label: "Exposure", num: true, title: "Stock-equivalent exposure at entry (1.0× = the stock)", sort: (r) => m(r).stock_equiv, render: (r) => (m(r).stock_equiv == null ? "—" : `${num(m(r).stock_equiv)}×`) },
+      { key: "pos", label: "Position", num: true, title: "Half-Kelly ÷ exposure, capped at 100%", sort: (r) => m(r).position, render: (r) => pct(m(r).position, 0) },
+      { key: "vs", label: "vs stock", nosort: true, render: (r) => (r.stock ? "" : badges(vsStock(m(r), stock))) },
     ];
     section.append(h("h2", {}, h("a", { href: `#/strategy/${base.id}` }, base.name)),
-      h("p", { class: "muted small" }, `${base.hold} · short legs ${base.short_dte[0]}–${base.short_dte[1]} DTE · ${m(base.methods[0]).windows ?? "—"} windows`),
-      table(cols, rows, { sortKey: "sharpe", rowClass: (r) => (r.stock ? "bench" : null), compact: true }));
+      h("p", { class: "muted small" }, `${base.hold} · ${m(base.methods[0]).windows ?? "—"} windows`),
+      table(cols, rows, { sortKey: "tier", desc: false, rowClass: (r) => (r.stock ? "bench" : beatsStock(m(r), stock) ? "beats" : null), compact: true }));
     const controls = h("div", { class: "controls" });
     section.append(controls, chartBox, h("h3", {}, "If opened today"), picksBox);
 
@@ -621,7 +683,7 @@ async function optionsPage(root) {
       picksBox.textContent = "";
       const picks = base.picks.filter((p) => p.method === pick);
       if (!picks.length) { picksBox.appendChild(h("p", { class: "muted small" }, "No current holdings.")); return; }
-      const legCell = (p, side) => { const l = p.legs.find((x) => x.side === side); return l ? (l.missing ? h("span", { class: "muted" }, "no liquid contract") : contractLabel(l)) : ""; };
+      const legCell = (p, side) => { const l = p.legs.find((x) => x.side === side); return l ? (l.missing ? h("span", { class: "muted" }, side === "long" ? "no liquid contract (holds the stock)" : "no liquid contract (cash)") : contractLabel(l)) : ""; };
       const val = (p, side, k) => p.legs.find((x) => x.side === side && !x.missing)?.[k];
       const isLong = method.instrument === "leap" || method.instrument === "diagonal";
       const isShort = method.instrument !== "leap";
@@ -630,14 +692,18 @@ async function optionsPage(root) {
         { key: "spot", label: "Price", num: true, render: (p) => num(p.spot) },
         ...(isLong ? [
           { key: "long", label: "Long call", nosort: true, render: (p) => legCell(p, "long") },
+          { key: "ldte", label: "DTE", num: true, sort: (p) => val(p, "long", "dte"), render: (p) => val(p, "long", "dte") ?? "" },
+          { key: "ldelta", label: "Δ", num: true, sort: (p) => val(p, "long", "delta"), render: (p) => num(val(p, "long", "delta")) },
           { key: "lcost", label: "Cost / price", num: true, sort: (p) => val(p, "long", "cost_pct"), render: (p) => pct(val(p, "long", "cost_pct"), 0) },
-          { key: "lext", label: "Time value", num: true, title: "Extrinsic value as a share of the stock price", sort: (p) => val(p, "long", "extrinsic_pct"), render: (p) => pct(val(p, "long", "extrinsic_pct"), 1) },
+          { key: "lext", label: "Time value", num: true, hideNarrow: true, title: "Extrinsic value as a share of the stock price", sort: (p) => val(p, "long", "extrinsic_pct"), render: (p) => pct(val(p, "long", "extrinsic_pct"), 1) },
+          { key: "lexp", label: "Exposure", num: true, title: "Stock-equivalent exposure of this sizing", sort: (p) => val(p, "long", "exposure"), render: (p) => (val(p, "long", "exposure") == null ? "" : `${num(val(p, "long", "exposure"))}×`) },
         ] : []),
         ...(isShort ? [
           { key: "short", label: method.instrument === "csp" ? "Short put" : "Short call", nosort: true, render: (p) => legCell(p, "short") },
+          { key: "sdte", label: "DTE", num: true, sort: (p) => val(p, "short", "dte"), render: (p) => val(p, "short", "dte") ?? "" },
           { key: "prem", label: "Premium", num: true, sort: (p) => val(p, "short", "premium"), render: (p) => num(val(p, "short", "premium")) },
           { key: "delta", label: "Δ", num: true, sort: (p) => val(p, "short", "delta"), render: (p) => num(val(p, "short", "delta")) },
-          { key: "iv", label: "IV", num: true, sort: (p) => val(p, "short", "iv"), render: (p) => pct(val(p, "short", "iv"), 0) },
+          { key: "iv", label: "IV", num: true, hideNarrow: true, sort: (p) => val(p, "short", "iv"), render: (p) => pct(val(p, "short", "iv"), 0) },
           { key: "yield", label: "Yield / yr", num: true, sort: (p) => val(p, "short", "yield_annual"), render: (p) => pct(val(p, "short", "yield_annual"), 0) },
           method.instrument === "csp"
             ? { key: "be", label: "Breakeven", num: true, title: "Strike minus premium, vs today's price", sort: (p) => val(p, "short", "breakeven_pct"), render: (p) => pct(val(p, "short", "breakeven_pct"), 1, true) }
@@ -646,7 +712,7 @@ async function optionsPage(root) {
       ], picks, { sortKey: "ticker", desc: false, compact: true }));
       picksBox.appendChild(h("p", { class: "muted small" }, `From the ${fmtDate(base.picks_as_of)} option close; delayed data, not a quote.`));
     };
-    controls.append(seg(base.methods.map((x) => [x.method, x.label.replace("Cash-secured put", "CSP").replace("Covered call", "CC")]), pick, (v) => { pick = v; draw(); }));
+    controls.append(seg(base.methods.map((x) => [x.method, `${x.tier}: ${x.label.replace("Cash-secured put", "Put")}`]), pick, (v) => { pick = v; draw(); }));
     draw();
   }
 }
@@ -805,8 +871,8 @@ function methodologyPage(root) {
     h("h2", {}, "Rank Momentum"),
     p("Every index member is ranked on its 3-, 6- and 12-month return (1 = best); the list is the best average rank, ties to the stronger 12-month return. Fast Rank Momentum is the same on 1-, 3- and 6-month returns, ties to the stronger 6-month return."),
     h("h2", {}, "Options"),
-    p("Option methods run on a select set of names: the stocks entering the S&P 500 Leaders, S&P 500 Rank Momentum and Megacap Leaders top 5 and the Megacap Laggards top 2, plus option watchlists. Day bars come from the OPRA flat files (no quotes or open interest), kept only around the periods a name is held and inside strike/expiry bands. Each method reuses the stock strategy's windows; contracts are chosen by Black-Scholes delta on the report's as-of close and filled the next session at mid(open, close) with a spread haircut. A held contract with no trade that day is valued at its last implied volatility."),
-    p("Cash-secured puts: collateral is the strike; an expiring out-of-the-money put is replaced the next session; an assigned put's shares are held until the name leaves the list. Covered calls: shares plus calls on all of them; called-away shares are re-bought the next session. LEAPs (DTE 365–800, nearest 540): calls on capital ÷ price shares with the rest in T-bills, rolled below 180 DTE. Diagonal: that LEAP plus a short call on the same shares, settled at intrinsic if in the money at expiry. A split closes everything the session before and reopens after."),
+    p("Option methods run on a select set of names: the stocks entering the S&P 500 Leaders, S&P 500 Rank Momentum and Megacap Leaders top 5 and the Megacap Laggards top 2, plus option watchlists. Day bars come from the OPRA flat files (no quotes or open interest), kept only around the periods a name is held and inside strike/expiry bands. Each method reuses the stock strategy's windows; contracts are chosen by Black-Scholes delta on the report's as-of close and filled the next session at the traded price, mid(open, close), with no spread haircut (the plan has no bid/ask history). A held contract with no trade that day is valued at its last implied volatility. Three methods are tracked per strategy, chosen from a grid of 25 (docs/options_grid.md)."),
+    p("Cash-secured puts: collateral is the strike; an expiring out-of-the-money put is replaced the next session; an assigned put's shares are held until the name leaves the list. Covered calls: shares plus calls on all of them; called-away shares are re-bought the next session. Long calls (6m / 12m): the first expiry at least 180 / 365 days out with a traded strike within ±0.05 of the target delta (the most-traded one), sized to move like the stock (match stock) or with 50% / 100% of capital in calls, the rest in T-bills; rolled at the window's value below 120 / 180 DTE. If no call qualifies the holding keeps the stock until one does. Diagonal: a 6m Δ0.80 call matched to the stock plus a ~21-day short call on the same shares, settled at intrinsic if in the money at expiry. A split closes everything the session before and reopens after."),
     h("h2", {}, "Congress"),
     p("Periodic Transaction Reports (House Clerk and Senate eFD, including OCR'd paper filings) are checked daily. A member's skill is measured point-in-time over the trailing two years of disclosures: each purchase is bought at the close of the first session after it was disclosed and sold the session after the member discloses a sale of that name; open lots are marked at the report date. Dollar-weighted (range midpoint) alpha vs SPY; at least 5 purchases to rank."),
     p("Top-5 Buys: purchases disclosed in the last 120 days by the five best-ranked members, scored by each name's share of a member's recent buying, summed across members. Top-5 Holdings: names those members still hold (no sale disclosed), scored by share of each member's open book."),

@@ -8,7 +8,7 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 34 tests
+.venv/bin/python -m pytest -q                   # 37 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
@@ -53,28 +53,32 @@ RankMom400 top5 22.6% · Congress Buys 12.3% · Congress Holdings 9.4% · Munger
   Rank Momentum, Megacap Leaders top 5; Megacap Laggards top 2) + option watchlists. Coverage per
   (session, root) in `option_coverage`; new names cost a batched re-stream of only their sessions.
   Backfill: 502 files, 1.7 GB streamed in 10 min, 6.1M rows kept.
-- **Methods** (`methods/instruments/options.py`, config in `strategies.yaml` → `option_methods`):
-  CSP −0.30/−0.45, covered call 0.15/0.30, LEAP 0.80/0.90 (stock replacement), diagonal 0.80/0.30.
-  Short legs 14–21 DTE for momentum, 30–45 for laggards. Chosen on the as-of close, filled next
-  session at mid(open, close) ± haircut, closed with the stock (D11); assigned shares held (D12).
-- **Evaluation** (`evaluate/options_engine.py`): each method on its base's windows since the options
-  history begins; also at 0×/2× haircut and the stock over the same windows (`<base>.stock_same`).
-  Evaluation now takes ~2.7 min (options ~2 min of it).
-- **Site**: `#/options` (per base: method table, chart vs stock + SPY, "if opened today" picks from the
-  latest option close); option strategy pages show legs per trade.
+- **Methods** (`methods/instruments/options.py`): CSP, covered call, long call ("LEAP"), diagonal.
+  Long calls take the first expiry ≥180d ("6m") or ≥365d ("12m") with a traded strike within ±0.05 Δ
+  (most-traded wins), sized `delta` (moves like the stock), or 0.5 / 1.0 = share of capital in calls;
+  rolled at the window's value; if no call qualifies the window holds the stock until one does.
+- **Fills at the traded price** (mid of open/close; no haircut) — the user's call: no bid/ask data, and
+  the old 3%/6% haircut on ~50 round trips a year was what made LEAPs lose.
+- **Grid** (`python -m market.evaluate.option_grid`, ~2.5 min, read-only; writes `docs/options_grid.md`
+  + `data/options_grid.json`): 25 methods × 4 bases. Re-run periodically to revisit the tracked set.
+- **Tracked set** (`strategies.yaml` → `option_methods.bases`): 3 per base, tier Defensive / Balanced /
+  Aggressive, chosen 2026-10-09 from the grid. Retired methods' rows are pruned on a full evaluate.
 
-Results (Oct 2024 → Oct 2026, CAGR / Sharpe; stock over the same windows first):
-| Base | Stock | CSP −.30 | CSP −.45 | CC .15 | CC .30 | LEAP .80 | Diagonal |
-|---|---|---|---|---|---|---|---|
-| S&P 500 Leaders | 101% / 1.23 | 30% / 0.98 | 42% / 1.09 | 69% / 1.10 | 61% / 1.14 | 3% / −0.03 | −14% |
-| S&P 500 RankMom | 82% / 1.14 | 37% / 1.26 | 38% / 1.11 | 71% / 1.27 | 62% / 1.33 | −5% | −16% |
-| Megacap Leaders | 43% / 0.82 | 24% / 0.80 | 23% / 0.66 | 28% / 0.65 | 17% / 0.41 | −41% | −49% |
-| Megacap Laggards | 51% / 1.51 | 16% / 1.13 | 21% / 1.23 | 44% / 1.53 | 35% / 1.48 | −5% | −16% |
+| Base (stock CAGR / Sharpe / worst) | Defensive | Balanced | Aggressive |
+|---|---|---|---|
+| S&P 500 Leaders (101% / 1.23 / −44%) | CSP Δ−0.20: 34% / 1.34 / −20% | LEAP 12m Δ0.60, 50% in calls: 166% / 1.49 / −46% | LEAP 12m Δ0.60, 100%: 365% / 1.54 / −57% |
+| S&P 500 Rank Mom (82% / 1.14 / −39%) | CSP Δ−0.20: 30% / 1.80 / −10% | Diagonal 6m 0.80/0.30: 74% / 1.51 / −28% | LEAP 12m Δ0.60, 50%: 126% / 1.34 / −42% |
+| Megacap Leaders (43% / 0.82 / −36%) | CSP Δ−0.30: 28% / 0.97 / −23% | LEAP 12m Δ0.80, 50%: 56% / 0.92 / −36% | LEAP 12m Δ0.80, 100%: 99% / 0.83 / −56% |
+| Megacap Laggards (51% / 1.51 / −19%) | Diagonal 6m 0.80/0.20: 38% / 1.54 / −14% | LEAP 6m Δ0.80, 50%: 103% / 1.45 / −34% | LEAP 12m Δ0.80, 100%: 166% / 1.33 / −48% |
 
-**Caveat:** LEAP and diagonal results are set by the spread assumption: at 0× haircut LEAP 0.80 ≈ stock
-(e.g. 104% vs 101%), at 2× it loses ~50%/yr. The 1× rule doubles a 3%-of-mid haircut past 180 DTE,
-i.e. ~6% per side on a $30–60 LEAP, which is likely far wider than real megacap LEAP spreads. There is
-no bid/ask history on our plan to calibrate it.
+- **Sizing stats**: half-Kelly is the site's per-trade 0.5·(p − q/b) (user's choice); it ignores leverage,
+  so option methods also show `stock_equiv` (stock-equivalent exposure at entry) and
+  `position` = half-Kelly ÷ stock_equiv (cap 100%).
+- **Site**: `#/options` — summary grid (highlight = Sharpe ≥ stock + 0.05), patterns text (hard-coded
+  in `app.js` `OPTION_PATTERNS`, from the 2026-10-09 grid run — update when the grid is re-run),
+  per-base tables, chart, "if opened today" with DTE and exposure.
+- **Caveats**: 2 years; no spread cost; for 24–28% of S&P 500 holdings no 12m call qualified (held stock).
+  CSPs still use 14–21d (momentum) / 30–45d (laggards), not the ~21d of covered calls.
 
 ## Fixed earlier this session
 - `.gitignore` `data/` was hiding `src/market/data/` → now `/data/`; package committed.
@@ -91,8 +95,8 @@ section with digest cards. Data: `site/data/congress.json`, `hedge.json` (export
 ## Open items / next steps
 1. **Not yet done** (needs your OK): install launchd agent (`ops/launchd/`), create GitHub repo
    `zacseidel/options` and publish the site (public vs private?).
-2. Options: decide the long-dated haircut (see caveat above); optionally add a slower exit rule for
-   option variants (momentum windows are ~1 week, so option round trips are frequent).
+2. Options: re-run the grid periodically and revisit the tracked set; consider aligning CSPs to ~21d;
+   the 13F/Congress categories have no option data yet.
 3. 13F history is short (smartmoney ledger starts with Aug-2024 filings and keeps a sliding
    2-year window). Port the 13F fetcher and backfill older quarters from EDGAR to lengthen it and to
    stop old filings being trimmed (stored snapshots survive, but a category rebuild would lose them).

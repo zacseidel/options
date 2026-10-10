@@ -11,6 +11,7 @@ import pandas as pd
 
 from market.data.options import option_root
 from market.evaluate.options_engine import load_option_data
+from market.methods.instruments.options import Book, _leap_pick, _short_pick
 
 
 def _num(value, digits=6):
@@ -33,15 +34,12 @@ def todays_picks(data, panel, base, methods, holdings: list[tuple[str, str]]) ->
         spot = data.spot_close(sid, sel)
         for m in methods:
             inst = m["instrument"]
+            book = Book(data, sid, root, m, 0.0)      # the backtest's own contract pickers
             picks = []
             if inst in ("leap", "diagonal"):
-                ld = m["leap_dte"]
-                picks.append(("long", data.select(sid, root, sel, open_day, "C", m["delta"], ld["min"], ld["max"],
-                                                  prefer_dte=ld["prefer"], relaxed=True)))
+                picks.append(("long", _leap_pick(book, sel, open_day)))
             if inst in ("csp", "covered_call", "diagonal"):
-                kind = "P" if inst == "csp" else "C"
-                target = m["short_delta"] if inst == "diagonal" else m["delta"]
-                picks.append(("short", data.select(sid, root, sel, open_day, kind, target, *m["short_dte"])))
+                picks.append(("short", _short_pick(book, sel, open_day)))
             legs = []
             for side, pick in picks:
                 if pick is None:
@@ -62,9 +60,22 @@ def todays_picks(data, panel, base, methods, holdings: list[tuple[str, str]]) ->
                 else:
                     leg["cost_pct"] = _num(premium / spot, 4)
                     leg["extrinsic_pct"] = _num((premium - max(spot - strike, 0)) / spot, 4)
+                    sizing = m.get("sizing", "notional")
+                    if sizing not in ("delta", "notional"):   # share of capital in calls → stock-equivalent exposure
+                        leg["exposure"] = _num(float(sizing) * pick["delta"] * spot / premium, 3)
+                    elif sizing == "delta":
+                        leg["exposure"] = 1.0
                 legs.append(leg)
             rows.append({"ticker": ticker, "spot": _num(spot, 2), "method": m["id"], "legs": legs})
     return rows
+
+
+def _stock_same(metrics_by: dict, base_id: str, methods) -> dict:
+    """The stock-over-same-windows metrics, plus its trade stats (half-Kelly, win rate) from the method stats."""
+    out = {k: dict(v) for k, v in metrics_by.get(f"{base_id}.stock_same", {}).items()}
+    extra = metrics_by.get(methods[0].id, {}).get("all", {}).get("stock_same", {})
+    out.setdefault("all", {}).update({k: extra.get(k) for k in ("half_kelly", "win_rate", "stock_equiv", "position")})
+    return out
 
 
 def build(con, panel, strategies, metrics_by: dict, navs: pd.DataFrame, session_index: dict, key_of: dict,
@@ -93,11 +104,12 @@ def build(con, panel, strategies, metrics_by: dict, navs: pd.DataFrame, session_
             [base_id]).fetchall()
         by_base.append({
             "id": base_id, "name": strategy_label(base)["name"], "hold": strategy_label(base)["hold"],
-            "short_dte": methods[0].method["short_dte"],
+            "category": base.category,
             "start": session_index.get(dates[0]), "series": series,
-            "stock_same": metrics_by.get(f"{base_id}.stock_same", {}),
-            "methods": [{"id": s.id, "method": s.method["id"], "label": s.method["label"],
-                         "instrument": s.instrument, "metrics": metrics_by.get(s.id, {})} for s in methods],
+            "stock_same": _stock_same(metrics_by, base_id, methods),
+            "methods": [{"id": s.id, "method": s.method["id"], "label": s.method["label"], "tier": s.method.get("tier"),
+                         "instrument": s.instrument, "expiry": s.method.get("expiry"), "sizing": s.method.get("sizing"),
+                         "metrics": metrics_by.get(s.id, {})} for s in methods],
             "holdings": [key_of.get(sid, t) for sid, t in holdings],
             "picks": todays_picks(data, panel, base, [s.method for s in methods], holdings),
             "picks_as_of": data.last_session.date().isoformat() if data is not None else None,

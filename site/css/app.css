@@ -205,3 +205,23 @@ td.name-col { white-space: normal; }
 .options-base > h2 { margin-bottom: 2px; }
 .legs { display: inline-flex; flex-wrap: wrap; gap: 2px; }
 .legs .chip { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Options page: tracked methods vs the stock */
+.opt-summary { display: grid; gap: 10px; }
+.opt-row { display: grid; grid-template-columns: 150px repeat(4, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
+.opt-name { font-weight: 650; padding-top: 10px; }
+.opt-cell { background: var(--surface); border: 1px solid var(--ring); border-radius: var(--radius); padding: 10px 12px; min-width: 0; }
+.opt-cell.beats { background: var(--up-wash); border-color: var(--up); }
+.opt-label { font-weight: 600; margin: 2px 0; }
+.opt-nums { font-variant-numeric: tabular-nums; font-size: 13px; }
+.opt-cell .vs { margin-top: 6px; }
+.vs { display: inline-flex; flex-wrap: wrap; gap: 3px; }
+tr.beats td { background: var(--up-wash); }
+.patterns { max-width: 780px; padding-left: 18px; margin: 6px 0 10px; }
+.patterns li { margin: 5px 0; }
+.opt-help { max-width: 780px; margin: 18px 0 4px; }
+.opt-help summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 900px) {
+  .opt-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .opt-name { grid-column: 1 / -1; padding-top: 6px; }
+}

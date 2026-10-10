@@ -52,16 +52,32 @@ strategies:
 # Short legs are chosen on the report's as-of session (the prior close) and filled at the entry
 # session's mid(open, close) less the spread haircut; every leg closes when the stock would.
 option_methods:
-  bases: [mom12_sp500.top5, rankmom_sp500.top5, mom12_megacap.top5, laggards_mega10.top2.hold21]
-  short_dte:                       # DTE window for short legs, by base
-    default: [14, 21]              # momentum slots: median hold ~1 week
-    laggards_mega10.top2.hold21: [30, 45]   # 21-session holds
-  leap_dte: {min: 365, max: 800, prefer: 540, roll_below: 180}
-  methods:
-    - {id: csp30,  instrument: csp,          delta: -0.30, label: "Cash-secured put Δ−0.30"}
-    - {id: csp45,  instrument: csp,          delta: -0.45, label: "Cash-secured put Δ−0.45"}
-    - {id: cc15,   instrument: covered_call, delta: 0.15,  label: "Covered call Δ0.15"}
-    - {id: cc30,   instrument: covered_call, delta: 0.30,  label: "Covered call Δ0.30"}
-    - {id: leap80, instrument: leap,         delta: 0.80,  label: "LEAP call Δ0.80"}
-    - {id: leap90, instrument: leap,         delta: 0.90,  label: "LEAP call Δ0.90"}
-    - {id: diag,   instrument: diagonal,     delta: 0.80,  short_delta: 0.30, label: "Diagonal Δ0.80 / short Δ0.30"}
+  # Tracked option methods, three per base, chosen 2026-10-09 from the option method grid
+  # (docs/options_grid.md). Re-run `python -m market.evaluate.option_grid` periodically and revisit.
+  # Fills are at the traded price (mid of the day's open and close), no spread haircut.
+  short_dte:                       # cash-secured puts: any expiry in this DTE window
+    default: [14, 21]
+    laggards_mega10.top2.hold21: [30, 45]
+  call_dte: {short_dte: [14, 28], short_prefer: 21}   # covered calls and diagonal short legs
+  leap_dte:                        # long calls: first expiry past `min` with a strike within delta_tol
+    6m:  {min: 180, max: 365, prefer: 180, roll_below: 120}
+    12m: {min: 365, max: 600, prefer: 365, roll_below: 180}
+  delta_tol: 0.05
+  # sizing: delta = calls moving like the stock (1.0x); 0.5 / 1.0 = that share of capital spent on calls
+  bases:
+    mom12_sp500.top5:
+      - {id: csp20,      tier: Defensive,  instrument: csp,  delta: -0.20}
+      - {id: leap12m60h, tier: Balanced,   instrument: leap, expiry: 12m, delta: 0.60, sizing: 0.5}
+      - {id: leap12m60f, tier: Aggressive, instrument: leap, expiry: 12m, delta: 0.60, sizing: 1.0}
+    rankmom_sp500.top5:
+      - {id: csp20,      tier: Defensive,  instrument: csp,  delta: -0.20}
+      - {id: diag6m30,   tier: Balanced,   instrument: diagonal, expiry: 6m, delta: 0.80, short_delta: 0.30, sizing: delta}
+      - {id: leap12m60h, tier: Aggressive, instrument: leap, expiry: 12m, delta: 0.60, sizing: 0.5}
+    mom12_megacap.top5:
+      - {id: csp30,      tier: Defensive,  instrument: csp,  delta: -0.30}
+      - {id: leap12m80h, tier: Balanced,   instrument: leap, expiry: 12m, delta: 0.80, sizing: 0.5}
+      - {id: leap12m80f, tier: Aggressive, instrument: leap, expiry: 12m, delta: 0.80, sizing: 1.0}
+    laggards_mega10.top2.hold21:
+      - {id: diag6m20,   tier: Defensive,  instrument: diagonal, expiry: 6m, delta: 0.80, short_delta: 0.20, sizing: delta}
+      - {id: leap6m80h,  tier: Balanced,   instrument: leap, expiry: 6m, delta: 0.80, sizing: 0.5}
+      - {id: leap12m80f, tier: Aggressive, instrument: leap, expiry: 12m, delta: 0.80, sizing: 1.0}

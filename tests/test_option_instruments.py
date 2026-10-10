@@ -105,3 +105,32 @@ def test_nav_from_paths_equal_capital():
     nav = nav_from_paths([(t, res)], SESSIONS[1:])
     assert abs(nav["nav"].loc[SESSIONS[20]] - 100 * res.exit_value) < 1e-9
     assert nav["positions"].iloc[-1] == 0
+
+
+def test_leap_sizing_modes():
+    data = market([100.0] * 30)
+    base = {"instrument": "leap", "delta": 0.80}
+    all_in = run(data, {**base, "sizing": 1.0}, mult=0.0)
+    leap = [leg for leg in all_in.legs if leg.kind == "C"][0]
+    assert abs(leap.qty * leap.open_price - 1.0) < 1e-9                 # all capital in calls
+    matched = run(data, {**base, "sizing": "delta"}, mult=0.0)
+    leap = [leg for leg in matched.legs if leg.kind == "C"][0]
+    assert abs(leap.qty * leap.delta * 100.0 - 1.0) < 1e-9               # moves like $1 of stock
+    notional = run(data, {**base, "sizing": "notional"}, mult=0.0)
+    assert abs([leg for leg in notional.legs if leg.kind == "C"][0].qty * 100.0 - 1.0) < 1e-9
+
+
+def test_no_qualifying_call_holds_the_stock():
+    data = market([100.0] * 30)
+    res = run(data, {"instrument": "leap", "delta": 0.999, "delta_tol": 0.001, "fallback": "stock"}, mult=0.0)
+    assert res.events["stock_fallback"] == 1 and res.events["option_opens"] == 0
+    assert [leg.kind for leg in res.legs] == ["S"]
+    assert abs(res.exit_value - 1.0) < 0.01                              # flat stock, no option
+
+
+def test_delta_tolerance_rejects_far_strikes():
+    data = market([100.0] * 30)
+    s = SESSIONS[0]
+    assert data.select("A", "A", s, SESSIONS[1], "C", 0.999, 365, 800, prefer_dte=540, relaxed=True, tolerance=0.001) is None
+    pick = data.select("A", "A", s, SESSIONS[1], "C", 0.80, 365, 800, prefer_dte=540, relaxed=True, tolerance=0.05)
+    assert pick is not None and abs(pick["delta"] - 0.80) <= 0.05
