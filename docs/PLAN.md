@@ -15,7 +15,7 @@ Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions ar
 | Options | Option panel (`option_bars`, ~6.1M rows, ~60 MB) for 166 names, kept only around held windows, 2024-10-08 → now; daily step `options` |
 | Evaluation | 22 stock strategies + 12 tracked option strategies (3 per base: Defensive / Balanced / Aggressive, picked from a 25-method grid, `market.evaluate.option_grid`), filled at the traded price and compared with the stock over the same windows |
 | Site | Overview, Reports, **Options** (separate page; option strategies kept off the main lists) (grouped by section, with Congress / 13F digests), Strategies, Categories, Congress, Hedge funds, Stocks, Methodology |
-| Ops | `python -m market.ops.run` daily: disclosures (House/Senate PTRs + EDGAR daily 13F index) → bars → fund periods → signals → … → export; launchd files in `ops/launchd/` (not yet installed) |
+| Ops | `python -m market.ops.run` daily: disclosures (House/Senate PTRs + EDGAR daily 13F index) → bars → fund periods → signals → … → export; launchd files in `ops/launchd/` (installed 2026-10-10) |
 | Next | Re-run the option grid periodically; publish; port the smartmoney fetchers (its 13F ledger keeps only a 2-year window); backfill older 13Fs from EDGAR to lengthen the 13F history |
 
 ## 0. Decisions so far

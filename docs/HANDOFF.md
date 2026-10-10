@@ -128,8 +128,11 @@ disclosures/filings since the previous report, leaderboard at that date. Report 
 section with digest cards. Data: `site/data/congress.json`, `hedge.json` (export_smartmoney.py).
 
 ## Open items / next steps
-1. **Not yet done** (needs your OK): install launchd agent (`ops/launchd/`), create GitHub repo
-   `zacseidel/options` and publish the site (public vs private?).
+1. launchd agent **installed 2026-10-10** (`~/Library/LaunchAgents/com.zacseidel.market.daily.plist`,
+   loaded; test fire exited 0). Skips on battery. Check: `launchctl print gui/$(id -u)/com.zacseidel.market.daily`,
+   logs `~/Library/Logs/market/`. Re-copy the plist + `launchctl bootout`/`bootstrap` after editing it.
+   **Still needs your OK:** GitHub repo `zacseidel/options` and site publishing (site/data is gitignored,
+   so publishing = a step that pushes the built site; free Pages needs a public repo).
 2. Options: re-run the grid periodically and revisit the tracked set; consider aligning CSPs to ~21d;
    the 13F/Congress categories have no option data yet.
 3. 13F history is short (smartmoney ledger starts with Aug-2024 filings and keeps a sliding
