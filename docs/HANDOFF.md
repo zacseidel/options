@@ -8,7 +8,7 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 37 tests
+.venv/bin/python -m pytest -q                   # 40 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
@@ -46,6 +46,23 @@ SP500 top5 64.8% · RankMom500 top5 54.8% · Megacap top5 42.4% · SP400 top5 40
 13F Buys next5 64.6% / top5 38.5% · 13F Drivers next5 63.8% / top5 15.9% · Laggards 35.5% ·
 RankMom400 top5 22.6% · Congress Buys 12.3% · Congress Holdings 9.4% · Munger 14.6%.
 13F and Congress windows are short (~15 and ~21 months), so treat those numbers as anecdotal.
+
+## New categories (2026-10-10, not in Options)
+- **S&P 500 Leaders, Isolated Stall** (`mom12stall_sp500`): momentum10's report-only stall flag made a rule.
+  Stalled = highest close of the last 60 sessions is >15 sessions old. If ≤3 of the unfiltered top 10 by
+  12-month return are stalled (isolated), stalled leaders are dropped from the Leaders list; otherwise
+  (broad) the list is unchanged. Changes the top 5 on 26% of reports.
+- **Reasonable Growth Leaders** S&P 500 / 400 (`rgrowth_sp500`, `rgrowth_sp400`): top 12-month return
+  with 14-day Wilder RSI strictly between 20 and 80; no rank-improvement filter.
+
+Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
+| Strategy | top 5 | next 5 |
+|---|---|---|
+| S&P 500 Leaders | 64.8% / 1.04 / −44% (3y 88.6%) | 26.7% / 0.58 / −36% |
+| … Isolated Stall | 68.2% / 1.09 / −44% (3y 91.7%) | 26.6% / 0.60 / −37% |
+| S&P 500 Reasonable Growth | 66.6% / 1.05 / −40% (3y 91.6%) | 26.2% / 0.53 / −39% |
+| S&P 400 Leaders | 40.3% / 0.73 / −46% | 11.1% / 0.21 / −35% |
+| S&P 400 Reasonable Growth | 39.5% / 0.72 / −40% | 9.7% / 0.14 / −43% |
 
 ## Options (built 2026-10-09)
 - **Data** (`market.data.option_panel`): OPRA day-aggregate flat files streamed and filtered to names

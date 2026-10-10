@@ -15,7 +15,7 @@ from market.categories.registry import Context, category
 TOP_STORED = 10
 
 
-def _leaders(ctx: Context, ids: list[str]) -> pd.DataFrame:
+def _leaders(ctx: Context, ids: list[str], keep: int = TOP_STORED) -> pd.DataFrame:
     """12-month return leaders whose rank is improving or steady vs. one month ago."""
     px = ctx.closes(ids, "now", "1w", "1m", "12m", "13m").dropna()
     current = px["now"] / px["12m"] - 1
@@ -29,7 +29,7 @@ def _leaders(ctx: Context, ids: list[str]) -> pd.DataFrame:
     })
     frame["rank_change"] = frame["rank_12m_prior"] - frame["rank_12m"]
     frame = frame[frame["rank_12m"] <= frame["rank_12m_prior"]]
-    frame = frame.sort_values("return_12m", ascending=False).head(TOP_STORED)
+    frame = frame.sort_values("return_12m", ascending=False).head(keep)
     return frame.assign(score=frame["return_12m"])
 
 
@@ -38,6 +38,86 @@ def _leaders(ctx: Context, ids: list[str]) -> pd.DataFrame:
           lookback_sessions=280)
 def mom12_sp500(ctx: Context) -> pd.DataFrame:
     return _leaders(ctx, ctx.members("sp500"))
+
+
+# Isolated stall (ported from momentum10 ranking.py, where it is a report-only flag). A stock whose
+# highest close of the last STALL_WINDOW sessions is more than STALL_SESSIONS sessions old has
+# stalled. If at most ISOLATED_STALL_MAX of the unfiltered top 10 by 12-month return have stalled,
+# the stall is isolated: stalled leaders are dropped, so the next unstalled leader takes the slot.
+# More stalls than that are a broad market dip and the list is left alone.
+STALL_WINDOW = 60
+STALL_SESSIONS = 15
+ISOLATED_STALL_MAX = 3
+
+
+def _sessions_since_high(ctx: Context, ids: list[str], minimum_coverage: float = 0.90) -> pd.Series:
+    """Sessions since each name's highest close in the stall window (NaN if too little history)."""
+    end = ctx.panel.sessions.get_loc(ctx.as_of)
+    window = ctx.panel.close.iloc[max(0, end - STALL_WINDOW + 1): end + 1].reindex(columns=ids)
+    minimum = math.ceil(len(window) * minimum_coverage)
+    out = {}
+    for sid in ids:
+        col = window[sid]
+        if pd.isna(col.iloc[-1]) or col.notna().sum() < minimum:
+            out[sid] = float("nan")
+        else:
+            out[sid] = float(len(col) - 1 - col.reset_index(drop=True).idxmax())
+    return pd.Series(out, dtype=float)
+
+
+@category("mom12stall_sp500", "S&P 500 Leaders, Isolated Stall", "Momentum", "sp500",
+          "S&P 500 Leaders, skipping any leader with no new 60-session closing high for 15+ sessions when at "
+          "most 3 of the top 10 by 12-month return have stalled (an isolated stall); broad stalls are ignored.",
+          lookback_sessions=280)
+def mom12stall_sp500(ctx: Context) -> pd.DataFrame:
+    ids = ctx.members("sp500")
+    px = ctx.closes(ids, "now", "12m").dropna()
+    top10 = list((px["now"] / px["12m"] - 1).sort_values(ascending=False).head(10).index)
+    leaders = _leaders(ctx, ids, keep=30)
+    since = _sessions_since_high(ctx, sorted(set(top10) | set(leaders.index)))
+    stalled = since > STALL_SESSIONS
+    isolated = int(stalled.reindex(top10).fillna(False).sum()) <= ISOLATED_STALL_MAX
+    leaders = leaders.assign(sessions_since_high=since.reindex(leaders.index),
+                             stall_breadth=int(stalled.reindex(top10).fillna(False).sum()))
+    if isolated:
+        leaders = leaders[~stalled.reindex(leaders.index).fillna(False)]
+    return leaders.head(TOP_STORED)
+
+
+def _rsi(ctx: Context, ids: list[str], period: int = 14, history: int = 150) -> pd.Series:
+    """Wilder RSI on split-adjusted closes as of the report's as-of session."""
+    end = ctx.panel.sessions.get_loc(ctx.as_of)
+    closes = ctx.panel.close.iloc[max(0, end - history + 1): end + 1].reindex(columns=ids)
+    delta = closes.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    rsi = 100 - 100 / (1 + gain / loss)
+    return rsi.iloc[-1].where(loss.iloc[-1] > 0, 100.0)
+
+
+def _reasonable_growth(ctx: Context, universe: str) -> pd.DataFrame:
+    """Top 12-month returns among members whose 14-day RSI is between 20 and 80."""
+    ids = ctx.members(universe)
+    px = ctx.closes(ids, "now", "12m").dropna()
+    frame = pd.DataFrame({"return_12m": px["now"] / px["12m"] - 1})
+    frame["rsi_14"] = _rsi(ctx, list(frame.index)).reindex(frame.index)
+    frame = frame[(frame["rsi_14"] > 20) & (frame["rsi_14"] < 80)]
+    frame = frame.sort_values("return_12m", ascending=False).head(TOP_STORED)
+    return frame.assign(score=frame["return_12m"])
+
+
+@category("rgrowth_sp500", "S&P 500 Reasonable Growth Leaders", "Momentum", "sp500",
+          "Highest 12-month return among S&P 500 members whose 14-day RSI is above 20 and below 80.",
+          lookback_sessions=280)
+def rgrowth_sp500(ctx: Context) -> pd.DataFrame:
+    return _reasonable_growth(ctx, "sp500")
+
+
+@category("rgrowth_sp400", "S&P 400 Reasonable Growth Leaders", "Momentum", "sp400",
+          "Highest 12-month return among S&P 400 members whose 14-day RSI is above 20 and below 80.",
+          lookback_sessions=280)
+def rgrowth_sp400(ctx: Context) -> pd.DataFrame:
+    return _reasonable_growth(ctx, "sp400")
 
 
 @category("mom12_sp400", "S&P 400 Leaders", "Momentum", "sp400",

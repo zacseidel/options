@@ -10,7 +10,7 @@ Edit freely. Each `▸ DEFAULT` marks a choice you can change; open questions ar
 | Area | State |
 |---|---|
 | Data | S&P 500/400 security master (FIGI ids, ticker history, stand-ins) + Congress-bought and 13F-signal names ("signals" universe, ~1,750 securities); bars self-heal gaps (Honeywell pre-2026, Fiserv 2023–25 were missing); splits/dividends; quarterly market caps |
-| Categories | Momentum: S&P 500 / S&P 400 / Megacap Leaders, S&P 500 / S&P 400 Rank Momentum (3/6/12 and Fast 1/3/6) · Reversion: Megacap Laggards, Munger Dip · Congress: Top-5 Buys, Top-5 Holdings (from 2025-01) · Hedge funds: Skilled-Fund Buys, Alpha Drivers (from mid-2025) |
+| Categories | Momentum: S&P 500 / S&P 400 / Megacap Leaders, S&P 500 Leaders Isolated Stall, S&P 500 / 400 Reasonable Growth Leaders (RSI 20–80), S&P 500 / S&P 400 Rank Momentum (3/6/12 and Fast 1/3/6) · Reversion: Megacap Laggards, Munger Dip · Congress: Top-5 Buys, Top-5 Holdings (from 2025-01) · Hedge funds: Skilled-Fund Buys, Alpha Drivers (from mid-2025) |
 | Smart money | Point-in-time member and fund rankings recomputed from the raw ledgers (`market.smartmoney`); 13F follow-the-filing periods priced once and stored (`fund_periods`); leaderboards per report date (`entity_scores`) |
 | Options | Option panel (`option_bars`, ~6.1M rows, ~60 MB) for 166 names, kept only around held windows, 2024-10-08 → now; daily step `options` |
 | Evaluation | 22 stock strategies + 12 tracked option strategies (3 per base: Defensive / Balanced / Aggressive, picked from a 25-method grid, `market.evaluate.option_grid`), filled at the traded price and compared with the stock over the same windows |
