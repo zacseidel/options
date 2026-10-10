@@ -53,13 +53,17 @@ RankMom400 top5 22.6% · Congress Buys 12.3% · Congress Holdings 9.4% · Munger
   set only grows. Each shows 1y / 2y (ranking) / since-data-start records, dollars disclosed (Congress:
   purchase and sale range midpoints; 13F: reported book), rank-history chart, copied lots or quarterly
   books, holdings. Leaderboards gained a Bought (2y) / 13F book column and links.
-- Scoring is unchanged and matches smartmoney: Congress alpha = dollar-weighted average of per-purchase
-  (return − SPY) over purchases disclosed in the trailing 730 days, not annualized, ≥5 purchases;
-  funds = compounded follow-the-filing quarters that started in the trailing 730 days.
+- **Congress scoring (changed 2026-10-10, user's rule):** a member is judged on everything held over the
+  trailing 730 days — purchases inside the window from purchase, plus earlier purchases still owned when
+  it began (no sale disclosed), counted from the window start and weighted by their value then (amount ×
+  move to that point). Value-weighted average of (return − SPY), not annualized, ≥5 positions, no dollar
+  minimum. Leaderboard shows Disclosed (2y) = every buy + sale disclosed in the window (any asset) and
+  trade count; member pages also show all disclosures since the ledger start.
+  Funds unchanged: compounded follow-the-filing quarters that started in the trailing 730 days.
 - **Why the top alpha moved:** the Congress ledger starts 2024-06-18, so "2 years" was really "since
   June 2024" until mid-2026; since then 2024 purchases have been dropping out (e.g. Wasserman Schultz
   81% → 34%, Sessions / McGarvey fell below 5 purchases). Top ranks are also dominated by tiny books
-  (Evans: 6 buys, ~$48k). Open question for the user: rank on 1y vs 2y; a minimum-dollars gate.
+  (Evans: 6 buys, ~$48k). User chose: keep 2 years, no minimum.
 
 ## New categories (2026-10-10, not in Options)
 - **S&P 500 Leaders, Isolated Stall** (`mom12stall_sp500`): momentum10's report-only stall flag made a rule.

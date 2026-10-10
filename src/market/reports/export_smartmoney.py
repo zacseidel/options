@@ -31,7 +31,7 @@ def _leaderboards(con: duckdb.DuckDBPyConnection, kind: str, dates: list[str]) -
     latest = rows[rows["report_date"] == rows["report_date"].max()]
     leaders = [{"id": r.entity_id, "name": r.name, "rank": int(r.rank), "score": r.score, **json.loads(r.features),
                 "as_of_report": r.report_date} for r in latest.itertuples()]
-    size_key = "dollars" if kind == "congress" else "book"
+    size_key = "disclosed" if kind == "congress" else "book"
     ranks = [[index[r.report_date], r.entity_id, int(r.rank), round(r.score, 4), json.loads(r.features).get(size_key)]
              for r in rows[rows["rank"] <= RANK_HISTORY].itertuples() if r.report_date in index]
     return leaders, ranks
@@ -61,7 +61,7 @@ def build(con: duckdb.DuckDBPyConnection, key_of: dict[str, str], reports: list[
         "trades": [[r.disclosed.date().isoformat(), r.traded.date().isoformat() if pd.notna(r.traded) else None,
                     r.member_id, r.ticker, r.key, r.tx_type, r.amount_min, r.amount_max, r.owner or None]
                    for r in trades.itertuples()],
-        "leaders": c_leaders, "rank_fields": ["report", "member", "rank", "alpha", "bought"], "ranks": c_ranks,
+        "leaders": c_leaders, "rank_fields": ["report", "member", "rank", "alpha", "disclosed"], "ranks": c_ranks,
         "ledger_updated": ledgers.snapshot_info().get("congress"),
     }
     congress_by_key: dict[str, list] = {}

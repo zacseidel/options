@@ -386,7 +386,7 @@ function leaderTable(rows, { kind }) {
   return table([
     { key: "rank", label: "#", num: true },
     { key: "name", label: kind === "congress" ? "Member" : "Fund", cls: () => "name-col", render: (r) => [kind === "congress" ? memberLink(r.id, r.name) : fundLink(r.id, r.name), r.detail ? h("span", { class: "muted small" }, ` ${r.detail}`) : null] },
-    { key: "size", label: kind === "congress" ? "Bought (2y)" : "13F book", num: true, title: kind === "congress" ? "Disclosed purchases in the ranking window (range midpoints)" : "Reported value of long US positions in the latest 13F", render: (r) => money(r.size) },
+    { key: "size", label: kind === "congress" ? "Disclosed (2y)" : "13F book", num: true, title: kind === "congress" ? "Every purchase and sale disclosed in the last two years (range midpoints)" : "Reported value of long US positions in the latest 13F", render: (r) => money(r.size) },
     { key: "score", label: "Alpha", num: true, title: kind === "congress" ? "Dollar-weighted return above SPY, copying each purchase at disclosure" : "Follow-the-filing return minus SPY over completed quarters", cls: (r) => cls(r.score), render: (r) => pct(r.score, 0, true) },
     { key: "move", label: "vs prior", nosort: true, render: (r) => (r.prev == null ? h("span", { class: "badge new" }, "NEW") : r.prev > r.rank ? h("span", { class: "badge up" }, `▲${r.prev - r.rank}`) : r.prev < r.rank ? h("span", { class: "badge down" }, `▼${r.rank - r.prev}`) : h("span", { class: "badge flat" }, "—")) },
     ...(rows[0]?.extra || []).map((x, j) => ({ key: `x${j}`, label: x[0], num: true, hideNarrow: true, sort: (r) => r.extra[j][2], render: (r) => r.extra[j][1] })),
@@ -402,7 +402,7 @@ function leadersAt(data, i, kind, n = 25) {
     const name = kind === "congress" ? data.members[id]?.[0] || id : data.funds[id] || L?.name || id;
     const detail = kind === "congress" ? [data.members[id]?.[1], data.members[id]?.[3]].filter(Boolean).join(" · ") : "";
     const extra = !L ? [] : kind === "congress"
-      ? [["Lots", L.lots, L.lots], ["Return", pct(L.return, 0, true), L.return], ["Beat SPY", pct(L.beat_spy, 0), L.beat_spy]]
+      ? [["Trades", L.trades ?? "—", L.trades], ["Positions", L.lots, L.lots], ["Return", pct(L.return, 0, true), L.return], ["Beat SPY", pct(L.beat_spy, 0), L.beat_spy]]
       : [["Qtrs", L.periods, L.periods], ["Return", pct(L.return, 0, true), L.return], ["Beat SPY", pct(L.hit_rate, 0), L.hit_rate]];
     return { id, rank: v.rank, score: v.score, size: v.size, name, detail, prev: prev ? prev.get(id)?.rank ?? null : v.rank, extra };
   });
@@ -419,7 +419,7 @@ async function smartPage(root, kind, date) {
   root.appendChild(h("div", { class: "page-head" }, h("div", {},
     h("h1", {}, isC ? "Congress" : "Hedge funds (13F)", h("span", { class: "muted", style: "font-weight:400" }, ` · report ${fmtDate(d)}`)),
     h("p", { class: "lede" }, isC
-      ? "Periodic Transaction Reports from the House and Senate, bucketed into the Tuesday/Friday report dates by disclosure date. Members are ranked point-in-time: copy each disclosed purchase at the next close, hold until a sale is disclosed, dollar-weighted alpha vs SPY on purchases disclosed in the trailing two years (not annualized; at least 5 purchases). The ledger starts Jun 18, 2024, so before mid-2026 the window was shorter than two years. Click a member for 1-year and 2-year records and dollars disclosed."
+      ? "Periodic Transaction Reports from the House and Senate, bucketed into the Tuesday/Friday report dates by disclosure date. Members are ranked point-in-time: copy each disclosed purchase at the next close, hold until a sale is disclosed, scored on everything they held over the trailing two years — purchases in that time plus earlier purchases still owned when it began, counted from its start — as value-weighted alpha vs SPY (not annualized; at least 5 positions). The ledger starts Jun 18, 2024, so holdings bought before then are unknown. Click a member for 1-year and 2-year records and everything they disclosed."
       : "13F-HR filings, bucketed into the Tuesday/Friday report dates by filing date. Funds are ranked point-in-time by follow-the-filing alpha: buy each disclosed book the session after it is filed, hold to the next filing, value-weighted, vs SPY, over completed quarters that started in the trailing two years (the 13F ledger starts with filings from Jul 2024). Click a fund for its quarterly books, 1-year and 2-year records and holdings."),
     h("p", { class: "muted small" }, `Data through ${fmtDate(asOf)} · ledger updated ${(data.ledger_updated || "—").replace("T", " ")}`,
       !isC && data.wave?.quarter ? ` · ${quarterOf(data.wave.quarter)} filings: ${data.wave.filed} of today's top ${data.wave.top} funds have filed` : ""))));
@@ -488,17 +488,18 @@ async function memberPage(root, id) {
   root.appendChild(h("div", { class: "tiles" },
     tile("Rank (2y)", now.rank ? `#${now.rank}` : "—", now.rank ? `of ${now.ranked_of} ranked` : now.lots < 5 ? "needs 5 buys in window" : "unranked"),
     tile("Alpha (2y)", pct(now.alpha, 0, true), `return ${pct(now.return, 0, true)}`),
-    tile("Bought (2y)", money(now.bought.mid), `${now.bought.count} buys · ${money(now.bought.lo)}–${money(now.bought.hi)}`),
-    tile("Sold (2y)", money(now.sold.mid), `${now.sold.count} sales`),
-    tile("Beat SPY", pct(now.beat_spy, 0), `${now.lots} copied buys · ${now.open_lots} still held`)));
+    tile("Disclosed (2y)", money((now.bought.mid || 0) + (now.sold.mid || 0)), `${now.bought.count} buys ${money(now.bought.mid)} · ${now.sold.count} sales ${money(now.sold.mid)}`),
+    tile("All disclosures", `${m.all_disclosures.trades} trades`, `since ${fmtDate(m.data_start)}: buys ${money(m.all_disclosures.buys.mid)} · sales ${money(m.all_disclosures.sales.mid)}`),
+    tile("Beat SPY", pct(now.beat_spy, 0), `${now.lots} positions (${now.carried} held from before) · ${now.open_lots} still held`)));
   root.appendChild(h("p", { class: "muted small", style: "max-width:780px" },
-    "Alpha copies each disclosed purchase at the close after it was disclosed and sells when a sale of that stock is disclosed (or marks it today), then takes the dollar-weighted average (range midpoints) of each buy's return minus SPY's over the same days. It is not annualized: a buy held 18 months counts its whole gain. Dollar amounts are the midpoints of the disclosed ranges. Sales of stock bought before the ledger starts count toward Sold but not toward alpha."));
+    "Alpha copies each disclosed purchase at the close after it was disclosed and keeps it until a sale of that stock is disclosed (or marks it today). Over a window it counts everything held in it: purchases made inside it from purchase, and earlier purchases still owned when it began from its first day, at their value then. Each position's return minus SPY's over the same days is averaged by value (disclosed range midpoints). It is not annualized. Sales of stock bought before the ledger starts (Jun 18, 2024) appear in the disclosures but can't be scored."));
   root.append(h("h2", {}, "By time period"), table([
     { key: "label", label: "Period", nosort: true, render: (w) => [w.label, h("div", { class: "muted small" }, `since ${fmtDate(w.start)}`)] },
     { key: "rank", label: "Rank", num: true, nosort: true, render: (w) => (w.rank ? `#${w.rank} of ${w.ranked_of}` : "—") },
     { key: "alpha", label: "Alpha", num: true, nosort: true, cls: (w) => cls(w.alpha), render: (w) => pct(w.alpha, 0, true) },
     { key: "return", label: "Return", num: true, nosort: true, render: (w) => pct(w.return, 0, true) },
     { key: "beat", label: "Beat SPY", num: true, nosort: true, render: (w) => pct(w.beat_spy, 0) },
+    { key: "carried", label: "Positions", num: true, nosort: true, title: "Purchases held in the window (held from before it began)", render: (w) => `${w.lots} (${w.carried} from before)` },
     { key: "bought", label: "Bought", num: true, nosort: true, render: (w) => dollarRange(w.bought) },
     { key: "sold", label: "Sold", num: true, nosort: true, render: (w) => dollarRange(w.sold) },
     { key: "open", label: "Still held", num: true, nosort: true, hideNarrow: true, render: (w) => `${w.open_lots} of ${w.lots}` },

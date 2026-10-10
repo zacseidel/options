@@ -46,7 +46,7 @@ def _history(con, kind: str) -> dict[str, list]:
     out: dict[str, list] = {}
     for d, e, rank, score, features in rows:
         f = json.loads(features)
-        size = f.get("dollars") if kind == "congress" else f.get("book")
+        size = f.get("disclosed") if kind == "congress" else f.get("book")
         out.setdefault(e, []).append([str(d), int(rank), _n(score), _n(size, 0)])
     return out
 
@@ -88,6 +88,7 @@ def member_profiles(con, panel, key_of: dict) -> dict[str, dict]:
                 "key": key, "label": label, "start": _d(cutoff),
                 "rank": None if row is None or pd.isna(row["rank"]) else int(row["rank"]), "ranked_of": ranked_of[key],
                 "lots": 0 if row is None else int(row["lots"]), "open_lots": 0 if row is None else int(row["open_lots"]),
+                "carried": 0 if row is None else int(row["carried"]), "held": None if row is None else _n(row["dollars"], 0),
                 "alpha": None if row is None else _n(row["dw_alpha"]), "return": None if row is None else _n(row["dw_return"]),
                 "beat_spy": None if row is None else _n(row["beat_spy"]),
                 "bought": _dollars(in_window, "P"), "sold": _dollars(in_window, "S"),
@@ -98,11 +99,14 @@ def member_profiles(con, panel, key_of: dict) -> dict[str, dict]:
             if not r.open:
                 exit_dates[r.Index] = data.sessions[min(int(r.exit_pos), len(data.sessions) - 1)]
         out[mid] = {
+            "all_disclosures": {"trades": int(len(mine)), "buys": _dollars(mine, "P"), "sales": _dollars(mine, "S"),
+                                "other": int((~mine["tx_type"].isin(["P", "S"])).sum())},
             "id": mid, "name": str(first["member"]).strip(" ,"), "chamber": first["chamber"],
             "party": first.get("party") or "", "state": first.get("state") or "",
             "as_of": _d(as_of), "data_start": _d(start), "windows": windows,
             "history_fields": ["report", "rank", "alpha", "dollars"], "history": history.get(mid, []),
             "lot_fields": ["disclosed", "traded", "ticker", "key", "lo", "hi", "entry", "exit", "ret", "spy", "open"],
+            "lots_note": "returns from purchase (whole ledger)",
             "lots": [[_d(r.disclosed), _d(r.traded), r.ticker, key_of.get(r.security_id), _n(r.amount_min, 0), _n(r.amount_max, 0),
                       _d(data.sessions[int(r.pos)]), _d(exit_dates.get(r.Index)), _n(r.ret), _n(r.spy_ret), bool(r.open)]
                      for r in lots.itertuples()],

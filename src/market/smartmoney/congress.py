@@ -5,8 +5,13 @@ Every number for a report date uses only disclosures public by its `as_of` sessi
 A *lot* is one disclosed purchase. It is entered at the close of the first session after its
 disclosure date and closed at the close of the first session after the member's next sale
 disclosure of the same security (a sale closes every open lot of that name — PTRs rarely say
-which); until then it is marked at `as_of`. A member's score is the dollar-weighted average
-(amount-range midpoint) of lot return minus SPY's return over the same sessions.
+which); until then it is still owned and marked at `as_of`.
+
+A member is judged on what they held over the trailing window: lots bought inside it, plus lots
+bought earlier and still owned when it began (no sale disclosed by then), which count from the
+window's first session at their value then (disclosed amount × the stock's move to that point).
+The score is the value-weighted average of each lot's return minus SPY's over the same sessions.
+The ledger starts 2024-06-18, so holdings bought before it are unknown unless a later sale shows them.
 """
 
 from __future__ import annotations
@@ -76,24 +81,32 @@ def _benchmark_id(panel: Panel, history: pd.DataFrame, ticker: str) -> str:
 
 
 def lot_returns(data: CongressData, as_of_pos: int, window_days: int | None = None) -> pd.DataFrame:
-    """Lots public by `as_of` within the trailing window, with return and SPY return to date."""
+    """Lots owned at some point in the trailing window and public by `as_of`: bought inside it, or
+    bought earlier and not yet sold when it began (those start at the window's first session).
+    Adds start (session position), carried, value (the weight: amount, grown to the window start
+    for carried lots), ret and spy_ret to date, and open."""
     cutoff = data.sessions[as_of_pos] - pd.Timedelta(days=window_days or WINDOW_DAYS)
-    lots = data.lots[(data.lots["pos"] <= as_of_pos) & (data.lots["disclosed"] >= cutoff)].copy()
+    cut_pos = int(data.sessions.searchsorted(cutoff, side="left"))
+    lots = data.lots[(data.lots["pos"] <= as_of_pos) & (data.lots["exit_pos"] > cut_pos)].copy()
+    entry = lots["pos"].to_numpy()
+    start = np.maximum(entry, cut_pos)
     end = np.minimum(lots["exit_pos"].to_numpy(), as_of_pos)
-    start = lots["pos"].to_numpy()
     cols = lots["col"].to_numpy()
-    p0, p1 = data.close[start, cols], data.close[end, cols]
+    p_entry, p0, p1 = data.close[entry, cols], data.close[start, cols], data.close[end, cols]
+    lots["start"] = start
+    lots["carried"] = entry < cut_pos
+    lots["value"] = lots["amount"].fillna(1.0).to_numpy() * np.where(entry < cut_pos, p0 / p_entry, 1.0)
     lots["ret"] = p1 / p0 - 1
     lots["spy_ret"] = data.spy[end] / data.spy[start] - 1
     lots["open"] = lots["exit_pos"].to_numpy() > as_of_pos
-    return lots.dropna(subset=["ret", "spy_ret"])
+    return lots.dropna(subset=["ret", "spy_ret", "value"])
 
 
 def member_scores(data: CongressData, as_of_pos: int, window_days: int | None = None) -> pd.DataFrame:
     lots = lot_returns(data, as_of_pos, window_days)
     if lots.empty:
         return pd.DataFrame()
-    lots["w"] = lots["amount"].fillna(1.0)
+    lots["w"] = lots["value"]
     lots["wr"] = lots["w"] * lots["ret"]
     lots["wa"] = lots["w"] * (lots["ret"] - lots["spy_ret"])
     lots["win"] = (lots["ret"] > lots["spy_ret"]).astype(float)
@@ -105,6 +118,7 @@ def member_scores(data: CongressData, as_of_pos: int, window_days: int | None = 
         "state": g["state"].last() if "state" in lots else None,
         "lots": g.size(),
         "open_lots": g["open"].sum(),
+        "carried": g["carried"].sum(),
         "dollars": g["w"].sum(),
         "dw_return": g["wr"].sum() / g["w"].sum(),
         "dw_alpha": g["wa"].sum() / g["w"].sum(),
@@ -114,6 +128,17 @@ def member_scores(data: CongressData, as_of_pos: int, window_days: int | None = 
     ranked = scores[scores["rankable"]].sort_values("dw_alpha", ascending=False)
     scores["rank"] = pd.Series(np.arange(1, len(ranked) + 1), index=ranked.index)
     return scores.sort_values(["rank", "dw_alpha"], ascending=[True, False])
+
+
+def disclosure_totals(frame: pd.DataFrame, as_of: pd.Timestamp, window_days: int | None = None) -> pd.DataFrame:
+    """Per member: every trade disclosed in the window (any asset, mapped or not) — count and the
+    range-midpoint dollars of purchases and sales."""
+    cutoff = as_of - pd.Timedelta(days=window_days or WINDOW_DAYS)
+    t = frame[(frame["disclosed"] > cutoff) & (frame["disclosed"] <= as_of)]
+    amt = t["amount"].fillna(0)
+    g = pd.DataFrame({"member_id": t["member_id"], "buy": amt.where(t["tx_type"] == "P", 0),
+                      "sell": amt.where(t["tx_type"] == "S", 0)}).groupby("member_id")
+    return pd.DataFrame({"trades": g.size(), "bought": g["buy"].sum(), "sold": g["sell"].sum()})
 
 
 def top_members(scores: pd.DataFrame, n: int = TOP_MEMBERS) -> pd.DataFrame:
@@ -158,7 +183,7 @@ def holdings(data: CongressData, scores: pd.DataFrame, as_of_pos: int) -> pd.Dat
     held = lots[lots["open"] & lots["member_id"].isin(top.index)].copy()
     if held.empty:
         return pd.DataFrame(columns=["score"])
-    held["w"] = held["amount"].fillna(1.0)
+    held["w"] = held["value"]
     held["share"] = held["w"] / held.groupby("member_id")["w"].transform("sum")
     g = held.groupby("security_id")
     frame = pd.DataFrame({

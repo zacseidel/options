@@ -85,16 +85,23 @@ def leaders(full: bool = False) -> dict:
     con.close()
     rows = []
     dates = _report_sessions(panel, start)
+    disclosed = ledgers.congress_frame()
     for report_date, as_of in dates:
         scores = sm.congress.scores(as_of)
         if len(scores):
             ranked = scores.dropna(subset=["rank"]).head(LEADERS)
+            totals = congress.disclosure_totals(disclosed, as_of).reindex(ranked.index).fillna(0)
             for member_id, r in ranked.iterrows():
                 rows.append({"kind": "congress", "report_date": report_date, "entity_id": member_id,
                              "name": r["member"], "rank": int(r["rank"]), "score": float(r["dw_alpha"]),
                              "features": json.dumps({"chamber": r["chamber"], "party": r.get("party"),
                                                      "state": r.get("state"), "lots": int(r["lots"]),
-                                                     "open_lots": int(r["open_lots"]), "dollars": float(r["dollars"]),
+                                                     "open_lots": int(r["open_lots"]), "carried": int(r["carried"]),
+                                                     "dollars": float(r["dollars"]),
+                                                     "trades": int(totals.at[member_id, "trades"]),
+                                                     "bought": float(totals.at[member_id, "bought"]),
+                                                     "sold": float(totals.at[member_id, "sold"]),
+                                                     "disclosed": float(totals.at[member_id, "bought"] + totals.at[member_id, "sold"]),
                                                      "return": float(r["dw_return"]), "beat_spy": float(r["beat_spy"])})})
         funds = sm.hedge.ranked(as_of)
         for cik, r in funds.head(LEADERS).iterrows():

@@ -84,6 +84,26 @@ def test_member_needs_minimum_lots_to_rank():
     assert not scores["rankable"].any() and scores["rank"].isna().all()
 
 
+def test_holding_bought_before_the_window_counts_from_its_start():
+    up = [10.0 + i for i in range(40)]
+    panel = _panel({"AAA": up, "BBB": up, "SPY": [100.0] * 40})
+    row = {"member_id": "m1", "member": "M", "chamber": "house", "party": "", "state": "", "amount": 10_000}
+    trades = pd.DataFrame([
+        {**row, "ticker": "AAA", "tx_type": "P", "traded": SESSIONS[0], "disclosed": SESSIONS[0]},   # still held
+        {**row, "ticker": "BBB", "tx_type": "P", "traded": SESSIONS[0], "disclosed": SESSIONS[0]},
+        {**row, "ticker": "BBB", "tx_type": "S", "traded": SESSIONS[4], "disclosed": SESSIONS[4]},   # sold before
+    ])
+    data = congress.build(trades, panel, _history(["AAA", "BBB", "SPY"]))
+    as_of = 35
+    window_days = (SESSIONS[as_of] - SESSIONS[20]).days                  # window starts at session 20
+    lots = congress.lot_returns(data, as_of, window_days)
+    assert list(lots["ticker"]) == ["AAA"]                               # the sold lot is out
+    lot = lots.iloc[0]
+    assert lot["carried"] and lot["start"] == 20 and lot["open"]
+    assert np.isclose(lot["ret"], up[as_of] / up[20] - 1)                # return from the window start
+    assert np.isclose(lot["value"], 10_000 * up[20] / up[1])             # valued at the window start
+
+
 # ------------------------------------------------------------------ 13F
 
 def test_parse_form_idx_keeps_only_holdings_reports():
