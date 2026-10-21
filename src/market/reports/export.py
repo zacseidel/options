@@ -66,6 +66,7 @@ KEY_FEATURES = {
     "munger_top50_fq": ["pct_vs_sma200", "dip_date", "market_cap"],
     "pead_up_sp900": ["ear", "gap", "vol_ratio"],
     "pead_down_sp900": ["ear", "gap", "vol_ratio"],
+    "divraise_sp900": ["raise"],
 }
 HOLD_LABELS = {
     "while_listed": "hold while listed",

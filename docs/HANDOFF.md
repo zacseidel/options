@@ -137,7 +137,7 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
 - **Phases 4 and 5 tried and dropped (user, 2026-10-21):** insider buying and the Adaptive option tier
   showed no benefit; code, data and strategies removed; reports kept (`docs/research/04`, `05`).
 - **Working rule now:** research first; add Lab categories only for ideas that show a benefit.
-- **Phase 6 (researched, nothing kept):** corporate actions — PLAN-signals §8. Dividends now carry their
+- **Phase 6 (done):** corporate actions — PLAN-signals §8; Lab category Dividend Raisers (`divraise_sp900`). Dividends now carry their
   declaration date and frequency (`market.data.dividend_signals` builds raise / cut / initiation events).
   `python -m market.research.corporate_actions` (~5 min).
 - Next: Phase 7 (short interest), 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and

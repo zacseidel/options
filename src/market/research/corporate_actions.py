@@ -100,9 +100,10 @@ def main() -> None:
         payload[name] = entry
         lines.append(f"| {name} | " + " | ".join(cells) + " |")
     outcome = ("> **Outcome (2026-10-21).** Dividend raises ≥ 10% beat the *average* S&P 500 / 400 member in both\n"
-               "> halves, but as a strategy (one lot per raise, held 126 sessions) they returned 12.2% a year vs SPY's\n"
-               "> 12.1% (Sharpe 0.41 vs 0.44) — no benefit, so no Lab category was kept. Dividend cuts ≥ 10% lagged\n"
-               "> badly: an input for the shorts phase. Declaration dates are now stored with the dividends.\n\n")
+               "> halves. As a strategy (one lot per raise, held 126 sessions, total return with dividends) they matched\n"
+               "> SPY since 2021-11 (12.2% vs 12.1% a year; worst drop −21% vs −24%) and far beat the S&P 400 (MDY 6.1%).\n"
+               "> Kept as the Lab category Dividend Raisers (user's call). Dividend cuts ≥ 10% lagged badly: an input\n"
+               "> for the shorts phase. Declaration dates are now stored with the dividends.\n\n")
     print(write_report(6, "corporate-actions", "Corporate actions → forward returns", outcome + "\n".join(lines) + "\n",
                        payload))
     print("\n".join(lines))

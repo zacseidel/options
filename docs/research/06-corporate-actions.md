@@ -3,9 +3,10 @@
 _Generated 2026-10-21 by `python -m market.research.corporate_actions`._
 
 > **Outcome (2026-10-21).** Dividend raises ≥ 10% beat the *average* S&P 500 / 400 member in both
-> halves, but as a strategy (one lot per raise, held 126 sessions) they returned 12.2% a year vs SPY's
-> 12.1% (Sharpe 0.41 vs 0.44) — no benefit, so no Lab category was kept. Dividend cuts ≥ 10% lagged
-> badly: an input for the shorts phase. Declaration dates are now stored with the dividends.
+> halves. As a strategy (one lot per raise, held 126 sessions, total return with dividends) they matched
+> SPY since 2021-11 (12.2% vs 12.1% a year; worst drop −21% vs −24%) and far beat the S&P 400 (MDY 6.1%).
+> Kept as the Lab category Dividend Raisers (user's call). Dividend cuts ≥ 10% lagged badly: an input
+> for the shorts phase. Declaration dates are now stored with the dividends.
 
 2,753 events at S&P 500 / 400 members, 2021-11-15 → 2026-10-20; 99% of dividends carry a declaration date. In-sample before 2025-01-01. Mean excess return vs the average S&P 500 / 400 member over the same window.
 
