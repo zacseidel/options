@@ -149,7 +149,9 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
 - **Phase 8 (done):** shorts — PLAN-signals §10. Engine instruments `short` and `overlay` (strategies.yaml:
   `instrument: short, borrow: …` and `overlay: {long, short, weight}`). Lab: Dividend Cutters short and the
   Leaders-SI + 30% dividend-cut hedge. `python -m market.research.shorts` (~1 min).
-- Next: Phase 9 (convergence), 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
+- **Phase 9 (done):** convergence — PLAN-signals §11; Lab: Convergence, Momentum + Fundamentals (pending the
+  user's keep/drop). `python -m market.research.convergence` (~10 s).
+- All nine phases of PLAN-signals are done. Next: quarterly Lab review; publishing the site is still open., 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
   clear decliners as candidates), 9 (convergence).
 
 ## Fixed 2026-10-21 (scheduled-run bugs)

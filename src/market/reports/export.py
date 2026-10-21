@@ -62,6 +62,8 @@ KEY_FEATURES = {
     "pead_down_sp900": ["ear", "gap", "vol_ratio"],
     "divraise_sp900": ["raise"],
     "divcut_sp900": ["cut"],
+    "converge_sp900": ["families", "lists", "family_names"],
+    "momfund_sp900": ["lists", "families", "family_names"],
     "steady_sp500": ["longevity", "rank_12m", "return_12m"],
     "mom12si_sp500": ["return_12m", "days_to_cover", "rank_change"],
 }
