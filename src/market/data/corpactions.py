@@ -74,10 +74,12 @@ def _rows(splits: list[dict], dividends: list[dict], history: pd.DataFrame) -> t
     ], columns=["security_id", "ex_date", "split_from", "split_to"]).drop_duplicates(["security_id", "ex_date"])
     dividend_rows = pd.DataFrame([
         {"security_id": sid, "ex_date": r["ex_dividend_date"], "pay_date": r.get("pay_date"),
-         "amount": r["cash_amount"], "kind": r.get("dividend_type") or "CD"}
+         "amount": r["cash_amount"], "kind": r.get("dividend_type") or "CD",
+         "declared": r.get("declaration_date"), "frequency": r.get("frequency")}
         for r, sid in _map(dividends, "ex_dividend_date", history)
         if r.get("cash_amount")
-    ], columns=["security_id", "ex_date", "pay_date", "amount", "kind"]).drop_duplicates(["security_id", "ex_date", "kind"])
+    ], columns=["security_id", "ex_date", "pay_date", "amount", "kind", "declared", "frequency"]
+    ).drop_duplicates(["security_id", "ex_date", "kind"])
     return split_rows, dividend_rows
 
 

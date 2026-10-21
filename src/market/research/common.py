@@ -129,3 +129,29 @@ def spread(by_date: pd.DataFrame) -> dict:
     """Top minus bottom bucket, per date, summarized across dates."""
     s = (by_date[by_date.columns.max()] - by_date[1]).dropna()
     return summarize(s)
+
+
+def members_frame(con) -> pd.DataFrame:
+    """S&P 500 / 400 membership intervals with open ends filled (for point-in-time filters)."""
+    m = con.execute("SELECT universe, security_id, valid_from, valid_to FROM universe_membership "
+                    "WHERE universe IN ('sp500', 'sp400') AND security_id IS NOT NULL").df()
+    m["valid_from"] = pd.to_datetime(m["valid_from"]).fillna(pd.Timestamp.min)
+    m["valid_to"] = pd.to_datetime(m["valid_to"]).fillna(pd.Timestamp.max)
+    return m
+
+
+def universe_mean_excess(panel: Panel, members: pd.DataFrame, dates, bench: str, horizons=HORIZONS) -> pd.DataFrame:
+    """date × horizon: the average S&P 500 / 400 member's excess return vs `bench` over the same window
+    (starting the session after `date`) — the fair baseline for event lists, since an equal-weight list
+    of mid caps lags cap-weighted SPY on its own."""
+    tr = panel.tr
+    values, b = tr.to_numpy(), tr[bench].to_numpy()
+    out = {}
+    for d in dates:
+        live = members[(members["valid_from"] <= d) & (members["valid_to"] > d)]["security_id"].unique()
+        cols = tr.columns.get_indexer(live)
+        cols = cols[cols >= 0]
+        i = panel.sessions.searchsorted(pd.Timestamp(d), side="right")
+        out[d] = {h: (float(np.nanmean(values[i + h, cols] / values[i, cols] - 1) - (b[i + h] / b[i] - 1))
+                      if i + h < len(panel.sessions) else np.nan) for h in horizons}
+    return pd.DataFrame(out).T

@@ -115,6 +115,9 @@ CREATE TABLE IF NOT EXISTS dividends (
     kind          VARCHAR,                 -- CD regular, SC special, ...
     PRIMARY KEY (security_id, ex_date, kind)
 );
+-- Announcement date and payments a year (PLAN-signals §8: dividend raises are dated by declaration).
+ALTER TABLE dividends ADD COLUMN IF NOT EXISTS declared DATE;
+ALTER TABLE dividends ADD COLUMN IF NOT EXISTS frequency INTEGER;
 
 -- Point-in-time company market cap (quarterly), scaled daily by adjusted price for ranking.
 CREATE TABLE IF NOT EXISTS market_caps (

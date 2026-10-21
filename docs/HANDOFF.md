@@ -11,7 +11,7 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 58 tests
+.venv/bin/python -m pytest -q                   # 60 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
@@ -137,7 +137,11 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
 - **Phases 4 and 5 tried and dropped (user, 2026-10-21):** insider buying and the Adaptive option tier
   showed no benefit; code, data and strategies removed; reports kept (`docs/research/04`, `05`).
 - **Working rule now:** research first; add Lab categories only for ideas that show a benefit.
-- Next: Phase 6 (corporate actions), 7 (short interest), 8 (shorts), 9 (convergence).
+- **Phase 6 (researched, nothing kept):** corporate actions — PLAN-signals §8. Dividends now carry their
+  declaration date and frequency (`market.data.dividend_signals` builds raise / cut / initiation events).
+  `python -m market.research.corporate_actions` (~5 min).
+- Next: Phase 7 (short interest), 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
+  clear decliners as candidates), 9 (convergence).
 
 ## Fixed 2026-10-21 (scheduled-run bugs)
 - The 17:30 run failed every weekday on `options`: before a session's OPRA file is published the

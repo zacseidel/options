@@ -201,7 +201,14 @@ deteriorating), so the "insiders buying a bad company to signal" case is measure
 Note: the insiders repo's performance page currently prices nothing (all 295 positions "Entry-session price
 not available"); this replaces that evaluation with the shared engine.
 
-## 8. Corporate actions as events (Phase 6)
+## 8. Corporate actions as events (Phase 6) — researched 2026-10-21, nothing kept
+
+**Outcome.** `docs/research/06-corporate-actions.md` (S&P 500 / 400, 2021-10 → 2026-10, vs the average
+member; events dated by the announcement — dividends now store `declared` and `frequency`): raises ≥ 10%
+beat the average member (+2.0% / +3.5% over 126 sessions, in / out) but as a strategy only matched SPY
+(12.2% vs 12.1% a year) → not kept. Small raises lagged; **cuts ≥ 10% lagged badly (−6% / −12%)** → input for
+the shorts phase. Initiations, specials: nothing; spinoffs: big but only 13 events. Original plan below.
+
 
 From data already stored or from Phase 2: `div_initiators` (first dividend in ≥ 3 years), `div_raisers`
 (raised ≥ 10%), `div_streak` (raised in each of the last 5 years), `spinoffs` (new securities spun off from
