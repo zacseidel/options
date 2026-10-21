@@ -11,14 +11,14 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 43 tests
+.venv/bin/python -m pytest -q                   # 51 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
 
 ## Pipeline steps (`src/market/ops/run.py`)
 watchlists → universes (weekly) → disclosures → bars → fund_periods → signals →
-corpactions → market_caps → leaders → categories → **options** → evaluation → export
+corpactions → market_caps → leaders → option_flow → categories → options → evaluation → export
 
 New this session (bold):
 - **disclosures** (`market.smartmoney.ingest`): runs smartmoney's own `fetch_house` / `fetch_senate`
@@ -117,6 +117,18 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   per-base tables, chart, "if opened today" with DTE and exposure.
 - **Caveats**: 2 years; no spread cost; for 24–28% of S&P 500 holdings no 12m call qualified (held stock).
   CSPs still use 14–21d (momentum) / 30–45d (laggards), not the ~21d of covered calls.
+
+## New signal families (2026-10-21, `docs/PLAN-signals.md`)
+- **Phase 0 (done):** `stage: lab | tracked | retired` + `added:` in `strategies.yaml`; Lab strategies /
+  categories (`@category(..., stage="lab")`) show only on the site's **Lab** page with a `since_added`
+  (out-of-sample) metrics window. Categories can read lazily built data sources (`@source(name)`,
+  `ctx.source(name)`). `market.research.*` = read-only event studies → `docs/research/`. Lead-time
+  diagnostic on every category page (`market.research.lead_time`).
+- **Phase 1 (done):** option flow — see PLAN-signals §3. 6 Lab strategies on 5 Lab categories.
+  Re-run `python -m market.research.option_flow` (~20 s) after changing features.
+- Caveat: a category's `version` hashes only its own function, so editing a shared helper
+  (e.g. `iv_warnings`) does not trigger a rebuild — run `python -m market.reports.snapshot --category …`.
+- Next: Phase 2 (EDGAR fundamentals).
 
 ## Fixed 2026-10-21 (scheduled-run bugs)
 - The 17:30 run failed every weekday on `options`: before a session's OPRA file is published the

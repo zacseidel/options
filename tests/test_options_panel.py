@@ -69,3 +69,29 @@ def test_recent_403_counts_as_unpublished():
     assert not _unpublished(_client_error("403"), date(2026, 9, 1), today)    # old: a real entitlement error
     assert _unpublished(_client_error("NoSuchKey"), date(2026, 9, 1), today)
     assert not _unpublished(_client_error("SlowDown"), date(2026, 10, 20), today)
+
+
+def test_flow_summary_volumes_and_atm_iv():
+    from market.data.option_flow import summarize
+    from market.methods.option_math import price
+    session = date(2026, 10, 7)
+    spot, vol = 100.0, 0.30
+    contracts = [  # (expiry, kind, strike, volume)
+        (date(2026, 11, 13), "C", 100.0, 50), (date(2026, 11, 13), "P", 97.5, 40),   # 37 DTE ATM → iv30
+        (date(2026, 10, 16), "C", 105.0, 200), (date(2026, 10, 16), "P", 92.5, 70),  # short-dated OTM
+        (date(2026, 11, 13), "P", 90.0, 10), (date(2026, 11, 13), "C", 110.0, 10),   # skew wings
+    ]
+    rows = []
+    for expiry, kind, strike, volume in contracts:
+        t = (expiry - session).days / 365
+        px = float(price(kind, spot, strike, t, 0.04, 0.0, vol))
+        rows.append({"ticker": occ_ticker("ABC", expiry, kind, strike), "open": px, "close": px,
+                     "volume": volume, "transactions": 5})
+    rows.append({"ticker": occ_ticker("ZZZ", date(2026, 11, 6), "C", 10.0), "open": 1, "close": 1, "volume": 9, "transactions": 1})
+    out = summarize(pd.DataFrame(rows), session, {"ABC": ("sid-abc", spot)}, 0.04).set_index("root")
+    assert list(out.index) == ["ABC"]                      # roots we don't price are ignored
+    r = out.loc["ABC"]
+    assert r["security_id"] == "sid-abc"
+    assert r["call_volume"] == 260 and r["put_volume"] == 120
+    assert r["otm_call_volume"] == 200 and r["otm_put_volume"] == 70
+    assert abs(r["iv30"] - vol) < 0.005 and abs(r["skew"]) < 0.005    # flat vol surface → no skew

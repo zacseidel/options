@@ -58,7 +58,23 @@ filed, not when the quarter ended (point-in-time rule §2.1 of PLAN.md).
 
 ---
 
-## 3. Options flow and implied volatility (Phase 1)
+## 3. Options flow and implied volatility (Phase 1) — built 2026-10-21
+
+**Status.** `option_flow_daily` backfilled (501 sessions, 613 k rows, 2024-10-21 →); daily step
+`option_flow` runs before `categories`. Research: `docs/research/01-option-flow.md`. Of 11 features,
+none of the "unusual call buying" ones held up. Kept (both borderline on 2 years, so Lab):
+- **IV ÷ realized vol, top decile → lags SPY ~1%/month** (out-of-sample t −4). The raw list is crowded
+  by pending acquisitions (pinned price, collapsed realized vol); with realized vol ≥ 15% the effect
+  holds (−0.7% in, −1.5% out). → `ivrich_sp900` (warning / short list) and IV-filtered Leaders /
+  Rank Momentum (`mom12iv_sp500`, `mom12iv_sp400`, `rankmomiv_sp500`).
+- **Inverted term structure (30-day IV > long-dated IV) → beats steep upward term** (~+0.8% in,
+  +1.2% out per month) → `ivinverted_sp900`.
+
+First results (2024-11 → 2026-10, partly in-sample): IV filter lifts S&P 400 Leaders top 5 to 29% CAGR
+(17% unfiltered) and Rank Momentum top 5 to 97% (90%); S&P 500 Leaders top 5 80% (79%); next 5 worse.
+Warning list 2% CAGR vs SPY 15%; inverted term 21% (Sharpe 0.51 vs SPY 0.63). Re-run the research in
+~6 months to retest the near misses (OTM call surges, skew).
+
 
 **Data.** While streaming each day's file (no extra downloads), keep one row per underlying for the whole
 S&P 900 + signals universe in `option_flow_daily` (~1,750 × 500 sessions ≈ 0.9 M rows, ~20 MB):

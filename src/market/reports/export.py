@@ -47,6 +47,11 @@ KEY_FEATURES = {
     "congress_holdings": ["members", "dollars", "return_since"],
     "hedge_buys": ["funds", "top_funds", "value"],
     "hedge_drivers": ["funds", "held_by"],
+    "ivrich_sp900": ["iv_rv", "rv20", "term"],
+    "ivinverted_sp900": ["term", "iv_rv", "rv20"],
+    "mom12iv_sp500": ["return_12m", "iv_rv", "rank_change"],
+    "mom12iv_sp400": ["return_12m", "iv_rv", "rank_change"],
+    "rankmomiv_sp500": ["avg_rank", "return_3m", "return_12m", "iv_rv"],
 }
 HOLD_LABELS = {
     "while_listed": "hold while listed",

@@ -57,6 +57,14 @@ strategies:
   - {id: hedge_buys.next5,       category: hedge_buys,        slot: [6, 10], hold: while_listed}
   - {id: hedge_drivers.top5,     category: hedge_drivers,     slot: [1, 5],  hold: while_listed}
   - {id: hedge_drivers.next5,    category: hedge_drivers,     slot: [6, 10], hold: while_listed}
+  # ---------------------------------------------------------------- Lab (docs/PLAN-signals.md)
+  # Option flow (docs/research/01-option-flow.md). History starts 2024-11 (options plan: 2 years).
+  - {id: ivrich_sp900.top10.hold21, category: ivrich_sp900, slot: [1, 10], hold: fixed_hold, params: {sessions: 21}, stage: lab, added: 2026-10-21}
+  - {id: ivinverted_sp900.top10.hold21, category: ivinverted_sp900, slot: [1, 10], hold: fixed_hold, params: {sessions: 21}, stage: lab, added: 2026-10-21}
+  - {id: mom12iv_sp500.top5,   category: mom12iv_sp500,   slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: mom12iv_sp500.next5,  category: mom12iv_sp500,   slot: [6, 10], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: mom12iv_sp400.top5,   category: mom12iv_sp400,   slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: rankmomiv_sp500.top5, category: rankmomiv_sp500, slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
 
 # ------------------------------------------------------------------ options (PLAN §7b, D10–D13)
 # Each method below is run on each base strategy's own windows (same entries and exits as the

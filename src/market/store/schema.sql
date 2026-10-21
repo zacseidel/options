@@ -265,3 +265,31 @@ CREATE TABLE IF NOT EXISTS option_legs (
     close_reason  VARCHAR,
     quantity      DOUBLE                   -- shares-equivalent per $1 of window capital
 );
+
+-- ------------------------------------------------------------------ option flow (PLAN-signals §3)
+-- One row per underlying per session, summarized from the whole OPRA day-aggregates file for every
+-- security we price (not just the option set). Volumes are contracts; premium is dollars traded
+-- (volume × close × 100). IVs are Black-Scholes from closing prices, volume-weighted.
+CREATE TABLE IF NOT EXISTS option_flow_daily (
+    session          DATE NOT NULL,
+    security_id      VARCHAR NOT NULL,
+    root             VARCHAR NOT NULL,
+    call_volume      INTEGER,
+    put_volume       INTEGER,
+    call_premium     DOUBLE,
+    put_premium      DOUBLE,
+    otm_call_volume  INTEGER,                 -- calls ≤ 30 DTE, strike 100–115% of spot
+    otm_put_volume   INTEGER,                 -- puts ≤ 30 DTE, strike 85–100% of spot
+    contracts        INTEGER,                 -- distinct contracts traded
+    iv30             REAL,                    -- ATM (95–105%), 20–45 DTE, out-of-the-money side
+    iv_long          REAL,                    -- ATM (90–110%), 120–400 DTE
+    skew             REAL,                    -- put IV (88–95%) minus call IV (105–112%), 20–60 DTE
+    PRIMARY KEY (session, security_id)
+);
+
+-- Sessions whose file has been summarized into option_flow_daily (and for how many underlyings).
+CREATE TABLE IF NOT EXISTS option_flow_sessions (
+    session       DATE PRIMARY KEY,
+    underlyings   INTEGER NOT NULL,
+    computed_at   TIMESTAMP NOT NULL
+);

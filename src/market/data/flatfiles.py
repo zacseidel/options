@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import gzip
 import io
+import time
 from datetime import date
 from functools import lru_cache
 
 import boto3
 import pandas as pd
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError, ReadTimeoutError, ResponseStreamingError
 
 from market.config import config, s3_credentials
 
@@ -53,10 +54,23 @@ def head(dataset: str, session: date) -> int | None:
     return int(meta["ContentLength"])
 
 
+READ_ATTEMPTS = 4
+
+
 def read_day(dataset: str, session: date) -> tuple[pd.DataFrame, int]:
-    """Download one day's file into memory and parse it. Returns (frame, compressed_bytes)."""
-    obj = _client().get_object(Bucket=config()["polygon"]["flatfiles_bucket"], Key=key_for(dataset, session))
-    raw = obj["Body"].read()
+    """Download one day's file into memory and parse it. Returns (frame, compressed_bytes).
+
+    botocore retries the request but not a body read that stalls mid-stream, so that is retried here.
+    """
+    for attempt in range(READ_ATTEMPTS):
+        try:
+            obj = _client().get_object(Bucket=config()["polygon"]["flatfiles_bucket"], Key=key_for(dataset, session))
+            raw = obj["Body"].read()
+            break
+        except (ReadTimeoutError, ResponseStreamingError, EndpointConnectionError):
+            if attempt == READ_ATTEMPTS - 1:
+                raise
+            time.sleep(2 * (attempt + 1))
     with gzip.open(io.BytesIO(raw)) as handle:
         frame = pd.read_csv(handle, dtype={"ticker": "string"})
     return frame, len(raw)

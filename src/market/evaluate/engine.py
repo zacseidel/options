@@ -124,13 +124,15 @@ def dividend_multiplier(panel: Panel) -> pd.DataFrame:
 
 
 def close_out_delisted(trades: list[Trade], panel: Panel) -> None:
-    """Open trades whose security stopped trading are closed at its last bar (acquisition/delisting)."""
+    """Trades whose security stopped trading before their exit are closed at its last bar
+    (acquisition/delisting): open trades, and fixed holds scheduled past the last bar."""
     end = panel.sessions[-1]
     for trade in trades:
-        if trade.exit_session is not None:
-            continue
         last = panel.close[trade.security_id].dropna().index[-1]
-        if (end - last).days > STALE_DAYS:
+        if trade.exit_session is None:
+            if (end - last).days > STALE_DAYS:
+                trade.exit_session, trade.exit_reason = last, "delisted (last bar)"
+        elif trade.exit_session > last and trade.entry_session <= last:
             trade.exit_session, trade.exit_reason = last, "delisted (last bar)"
 
 

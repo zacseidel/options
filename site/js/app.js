@@ -131,6 +131,9 @@ const FEATURE_LABELS = {
   last_disclosed: ["Disclosed", (v) => shortDate(v)], return_since: ["Since disclosed", (v) => pct(v, 1, true)],
   funds: ["Funds", (v) => (v == null ? "—" : v.toFixed(0))], top_funds: ["Bought by", (v) => v || "—"],
   value: ["Value", money], held_by: ["Held by", (v) => (v == null ? "—" : v.toFixed(0))],
+  return_1m: ["1M", pct],
+  iv_rv: ["IV ÷ RV", (v) => num(v, 2)], rv20: ["Realized vol", (v) => pct(v, 0)],
+  term: ["IV 30d − long", (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)} pts`)],
 };
 const TEXT_FEATURES = new Set(["dip_date", "members", "top_funds", "last_disclosed"]);
 const GROUP_ORDER = ["Momentum", "Reversion", "Congress", "Hedge funds"];
@@ -1047,7 +1050,7 @@ async function labPage(root) {
     root.appendChild(h("p", { class: "empty" }, "Nothing on trial yet. New signal families (docs/PLAN-signals.md) appear here as they are built."));
   } else {
     const added = (s) => s.metrics.since_added || {};
-    const days = (s) => (s.added ? Math.round((new Date(META.data_through) - new Date(s.added)) / 864e5) : null);
+    const days = (s) => (s.added ? Math.max(0, Math.round((new Date(META.data_through) - new Date(s.added)) / 864e5)) : null);
     root.appendChild(table([
       { key: "name", label: "Strategy", sort: (r) => r.name, cls: () => "name-col", render: (r) => h("a", { href: `#/strategy/${r.id}` }, r.name) },
       { key: "added", label: "Added", sort: (r) => r.added, render: (r) => (r.added ? fmtDate(r.added) : "—") },

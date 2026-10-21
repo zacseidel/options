@@ -180,7 +180,8 @@ def munger_top50(ctx: Context) -> pd.DataFrame:
     return frame.assign(score=frame["pct_vs_sma200"])
 
 
-def _rank_momentum(ctx: Context, ids: list[str], periods: tuple[str, ...] = ("3m", "6m", "12m")) -> pd.DataFrame:
+def _rank_momentum(ctx: Context, ids: list[str], periods: tuple[str, ...] = ("3m", "6m", "12m"),
+                   keep: int = TOP_STORED) -> pd.DataFrame:
     """Best average rank of the given period returns across the whole index (1 = best)."""
     px = ctx.closes(ids, "now", "1w", *periods)
     px = px.dropna(subset=["now", *periods])
@@ -192,7 +193,7 @@ def _rank_momentum(ctx: Context, ids: list[str], periods: tuple[str, ...] = ("3m
     frame["universe_size"] = float(len(frame))
     # Best average rank first; the stronger longest-period return breaks ties.
     longest = f"return_{periods[-1]}"
-    frame = frame.sort_values(["avg_rank", longest], ascending=[True, False]).head(TOP_STORED)
+    frame = frame.sort_values(["avg_rank", longest], ascending=[True, False]).head(keep)
     return frame.assign(score=frame["avg_rank"])
 
 

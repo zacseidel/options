@@ -9,12 +9,13 @@
   7. corporate actions last 60 days daily; whole window weekly
   8. market caps       any quarter-end anchor not yet stored (+ refresh the latest weekly)
   9. leaders           point-in-time Congress member and 13F fund leaderboards per report date
- 10. categories        recompute recent report dates; full rebuild when a category's code changed
- 11. options          option bars for the select option set (previous session's OPRA file, plus a
+ 10. option_flow       one-row-per-underlying summary of each new OPRA file (option-flow categories)
+ 11. categories        recompute recent report dates; full rebuild when a category's code changed
+ 12. options           option bars for the select option set (previous session's OPRA file, plus a
                        batched re-stream for names newly entering an option slot)
- 12. evaluation        all strategies, stock and option (derived)
- 13. export            site/data JSON
- 14. publish           (not configured yet)
+ 13. evaluation        all strategies, stock and option (derived)
+ 14. export            site/data JSON
+ 15. publish           (not configured yet)
 
 Usage:  python -m market.ops.run [--full] [--only STEP ...] [--skip STEP ...]
 """
@@ -40,7 +41,7 @@ from market.smartmoney import hedge, ingest, pipeline
 from market.store.db import connect
 
 STEPS = ["watchlists", "universes", "disclosures", "bars", "fund_periods", "signals", "corpactions", "market_caps",
-         "leaders", "categories", "options", "evaluation", "export"]
+         "leaders", "option_flow", "categories", "options", "evaluation", "export"]
 WEEKLY_DAY = 0                      # Monday: refresh slower-moving reference data
 
 
@@ -144,6 +145,11 @@ def step_categories(full: bool) -> dict:
         start = pd.Timestamp(last).date() - timedelta(days=7)
         out["updated"] = snapshot.build(start, None, fresh)
     return {"rebuilt": stale, "updated": fresh, "seconds": sum(v.get("_seconds", 0) for v in out.values())}
+
+
+def step_option_flow(full: bool) -> dict:
+    """Option-flow summaries first, so the option-flow categories see the latest session."""
+    return option_panel.sync(flow_only=True)
 
 
 def step_options(full: bool) -> dict:
