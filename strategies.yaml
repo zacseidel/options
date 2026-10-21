@@ -7,6 +7,12 @@
 #   price_exit            enter while flat; sell the session after a close crosses an indicator
 #   fixed_hold            every listing opens its own lot; sell N sessions after entry
 # instrument: stock for now; options instruments (csp, covered_call, leap, diagonal) come next.
+#
+# stage (docs/PLAN-signals.md §2): tracked (default) | lab | retired. Lab strategies run and are scored
+# like the rest but show only on the site's Lab page; `added: YYYY-MM-DD` freezes their rules on that
+# date, and the `since_added` metrics window is their out-of-sample record. Changing a Lab strategy's
+# rules means a new `added` date (or a new id). Retired strategies keep their stored results but are
+# no longer evaluated or shown.
 
 defaults:
   instrument: stock

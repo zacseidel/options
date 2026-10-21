@@ -29,6 +29,7 @@ from market.config import config, directory
 from market.reports import export_options, export_profiles, export_smartmoney
 from market.data import watchlists
 from market.evaluate.engine import load_strategies
+from market.research import lead_time
 from market.store.db import connect
 from market.store.panel import load_panel
 
@@ -115,6 +116,7 @@ def export() -> dict:
     """).df()
     snaps["report_date"] = pd.to_datetime(snaps["report_date"]).dt.date.astype(str)
     category_meta = []
+    lead_times = lead_time.compute(con)
     order = {cat_id: i for i, cat_id in enumerate(REGISTRY)}
     for cat_id, frame in sorted(snaps.groupby("category_id"), key=lambda item: order.get(item[0], 99)):
         cat = REGISTRY[cat_id]
@@ -133,7 +135,8 @@ def export() -> dict:
         category_meta.append({
             "id": cat_id, "name": cat.name, "group": cat.group, "universe": cat.universe,
             "description": cat.description, "reports": len(dates), "first": dates[0], "latest": dates[-1],
-            "latest_count": int(len(latest)), "features": keys,
+            "latest_count": int(len(latest)), "features": keys, "stage": cat.stage,
+            "lead_time": lead_times.get(cat_id),
         })
 
     # ---------------------------------------------------------------- strategies
@@ -154,6 +157,8 @@ def export() -> dict:
 
     strategy_meta = []
     for strat in load_strategies():
+        if strat.stage == "retired":
+            continue
         nav = navs[navs["strategy_id"] == strat.id].set_index("date")
         if nav.empty:
             continue
@@ -179,7 +184,8 @@ def export() -> dict:
                              if r.trade_id in legs_by else [] for r in t.itertuples(index=False)]
         sizes[f"strategies/{strat.id}"] = _write(out_dir / "strategies" / f"{strat.id}.json", {
             **extra,
-            "id": strat.id, **label, "category": strat.category,
+            "id": strat.id, **label, "category": strat.category, "stage": strat.stage,
+            "added": strat.added.isoformat() if strat.added else None,
             "start": session_index.get(dates[0]), "nav": [_num(v, 3) for v in nav["nav"]],
             "nav_price": [_num(v, 3) for v in nav["nav_price"]], "positions": [int(v) for v in nav["positions"]],
             "benchmarks": bench_series, "metrics": metrics_by.get(strat.id, {}),
@@ -190,6 +196,7 @@ def export() -> dict:
         open_now = t[t["status"] == "open"]
         strategy_meta.append({
             "id": strat.id, **label, "category": strat.category, "visible": strat.visible,
+            "stage": strat.stage, "added": strat.added.isoformat() if strat.added else None,
             "start": dates[0], "metrics": metrics_by.get(strat.id, {}),
             "holdings": list(dict.fromkeys(key_of.get(s, s) for s in open_now["security_id"])),
             "spark": [_num(v, 2) for v in nav["nav"].iloc[::5]],

@@ -27,6 +27,7 @@ class Category:
     description: str
     compute: Callable[["Context"], pd.DataFrame]
     lookback_sessions: int                 # history needed before the first computable date
+    stage: str = "tracked"                 # 'lab' categories show only on the Lab page (PLAN-signals §2)
 
     @property
     def version(self) -> str:
@@ -37,11 +38,39 @@ class Category:
 REGISTRY: dict[str, Category] = {}
 
 
-def category(id: str, name: str, group: str, universe: str, description: str, lookback_sessions: int):
+def category(id: str, name: str, group: str, universe: str, description: str, lookback_sessions: int,
+             stage: str = "tracked"):
     def register(fn: Callable[["Context"], pd.DataFrame]) -> Callable[["Context"], pd.DataFrame]:
-        REGISTRY[id] = Category(id, name, group, universe, description, fn, lookback_sessions)
+        REGISTRY[id] = Category(id, name, group, universe, description, fn, lookback_sessions, stage)
         return fn
     return register
+
+
+# Data sources a category may read beyond prices (fundamentals, events, option flow, short interest).
+# Each loader runs at most once per build, on first use, so categories that don't need it cost nothing.
+SOURCE_LOADERS: dict[str, Callable] = {}
+
+
+def source(name: str):
+    """Register `loader(con, panel) -> object` under `name`; categories read it as ctx.source(name)."""
+    def register(loader: Callable) -> Callable:
+        SOURCE_LOADERS[name] = loader
+        return loader
+    return register
+
+
+class Sources:
+    """Lazily built, shared by every Context of one build. Each source filters to `as_of` itself."""
+
+    def __init__(self, con, panel: Panel):
+        self._con, self._panel, self._built = con, panel, {}
+
+    def get(self, name: str):
+        if name not in self._built:
+            if name not in SOURCE_LOADERS:
+                raise KeyError(f"no data source registered as {name!r}")
+            self._built[name] = SOURCE_LOADERS[name](self._con, self._panel)
+        return self._built[name]
 
 
 @dataclass
@@ -55,7 +84,14 @@ class Context:
     securities: pd.DataFrame               # security_id → cik, name (index security_id)
     dollar_volume: pd.DataFrame            # sessions × security_id trailing 60-session mean
     signals: object = None                 # SmartMoney (Congress + 13F), built only when needed
+    sources: Sources | None = None         # lazily built extra data sources (see `source`)
     _members_cache: dict = field(default_factory=dict)
+
+    def source(self, name: str):
+        """A registered data source; it must only return rows available by `as_of`."""
+        if self.sources is None:
+            raise RuntimeError("this Context was built without data sources")
+        return self.sources.get(name)
 
     @property
     def as_of(self) -> pd.Timestamp:

@@ -14,7 +14,7 @@ import argparse
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 
 import duckdb
 
@@ -42,6 +42,15 @@ class Strategy:
     visible: bool
     method: dict = field(default_factory=dict)   # option method settings (instrument != 'stock')
     base: str | None = None                      # the stock strategy whose windows an option method uses
+    stage: str = "tracked"                       # lab | tracked | retired (PLAN-signals §2)
+    added: date | None = None                    # rules frozen on this date; later results are out of sample
+
+
+STAGES = ("lab", "tracked", "retired")
+
+
+def _added(value) -> date | None:
+    return value if isinstance(value, date) or value is None else date.fromisoformat(str(value))
 
 
 def load_strategies(path=None) -> list[Strategy]:
@@ -50,8 +59,12 @@ def load_strategies(path=None) -> list[Strategy]:
     out = []
     for spec in raw["strategies"]:
         spec = {**defaults, **spec}
+        stage = spec.get("stage", "tracked")
+        if stage not in STAGES:
+            raise ValueError(f"{spec['id']}: stage must be one of {STAGES}, not {stage!r}")
         out.append(Strategy(spec["id"], spec["category"], spec["slot"], spec["hold"],
-                            spec.get("params") or {}, spec["instrument"], spec.get("visible", True)))
+                            spec.get("params") or {}, spec["instrument"], spec.get("visible", True),
+                            stage=stage, added=_added(spec.get("added"))))
     out.extend(option_strategies(raw.get("option_methods"), {s.id: s for s in out}))
     return out
 
@@ -88,7 +101,8 @@ def option_strategies(spec: dict | None, by_id: dict[str, Strategy]) -> list[Str
                 method.update({"delta_tol": spec["delta_tol"], "fallback": "stock"})
             method["label"] = method_label(method)
             out.append(Strategy(f"{base_id}.{m['id']}", base.category, base.slot, base.hold, base.params,
-                                m["instrument"], base.visible, method, base_id))
+                                m["instrument"], base.visible, method, base_id,
+                                stage=m.get("stage", base.stage), added=_added(m.get("added", base.added))))
     return out
 
 
@@ -201,8 +215,13 @@ def benchmark_navs(con: duckdb.DuckDBPyConnection, panel: Panel, mult: pd.DataFr
     return navs
 
 
-def window_slices(nav: pd.Series, windows: dict) -> dict[str, pd.Series]:
+def window_slices(nav: pd.Series, windows: dict, added: date | None = None) -> dict[str, pd.Series]:
+    """Trailing windows, plus `since_added` (out of sample) for strategies with an `added` date."""
     out = {}
+    if added is not None:
+        part = nav[nav.index >= pd.Timestamp(added)]
+        if len(part) >= 2:
+            out["since_added"] = part
     for name, years in windows.items():
         if years is None:
             out[name] = nav
@@ -220,7 +239,8 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
     mult = dividend_multiplier(panel)
     cfg = config()["evaluation"]
     everything = load_strategies()
-    strategies = [s for s in everything if not strategy_ids or s.id in strategy_ids]
+    # Retired strategies keep their stored results but are no longer re-evaluated.
+    strategies = [s for s in everything if (s.stage != "retired" or strategy_ids) and (not strategy_ids or s.id in strategy_ids)]
     option_strats = [s for s in strategies if s.instrument != "stock"]
     # Option strategies reuse their base's windows, so a base is always evaluated with them.
     needed_bases = {s.base for s in option_strats}
@@ -270,9 +290,10 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
 
     now = datetime.now()
     metric_rows = []
+    added_of = {s.id: s.added for s in everything}
     for sid, info in {**summary, **{f"bench.{t}": {"nav": n, "stats": {}} for t, n in bench.items()}}.items():
         nav = info["nav"]["nav"]
-        for name, part in window_slices(nav, cfg["windows"]).items():
+        for name, part in window_slices(nav, cfg["windows"], added_of.get(sid)).items():
             spy = bench["SPY"]["nav"].reindex(part.index)
             row = performance(part, cfg["risk_free_rate"], None if sid == "bench.SPY" else spy)
             row["price_return"] = float(info["nav"]["nav_price"].reindex(part.index).iloc[-1]

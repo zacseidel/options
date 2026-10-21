@@ -31,15 +31,16 @@ filed, not when the quarter ended (point-in-time rule §2.1 of PLAN.md).
 
 ---
 
-## 2. Framework additions (Phase 0, needed by everything else)
+## 2. Framework additions (Phase 0, needed by everything else) — built 2026-10-21
 
 1. **Strategy stage** — `stage: lab | tracked | retired` in `strategies.yaml` (existing entries default to
    `tracked`), plus `added: <date>`. The site gets a **Lab** page; Lab strategies stay off the main lists,
    like the Options page does today.
 2. **Two records per Lab strategy**: the backtest (full history, rules frozen at `added`) and the
-   **since-added** record (only reports after `added`). Thresholds chosen by looking at history only
-   prove themselves in the second one. ▸ DEFAULT: implement the `live` snapshot origin (already in the
-   schema, unused) so the since-added record is frozen as published rather than recomputed.
+   **since-added** record (only reports after `added`; metrics window `since_added`). Thresholds chosen by
+   looking at history only prove themselves in the second one. Built as a slice of the backtest, so a
+   rule change must come with a new `added` date or id. Later: the `live` snapshot origin (in the schema,
+   unused) to freeze reports as published.
 3. **Promotion review** ▸ DEFAULT, revisited each quarter: promote after ≥ 6 months since added if Sharpe ≥
    SPY's + 0.10 over both records and worst drop ≤ the parent group's; retire after 12 months if not.
    You decide; the site shows a review table.
@@ -51,6 +52,8 @@ filed, not when the quarter ended (point-in-time rule §2.1 of PLAN.md).
    report the rest separately** (▸ DEFAULT: options 12 m / 12 m; fundamentals and events 3 y / 2 y).
 6. **Lead-time diagnostic** (new metric, all categories): how often and how many sessions before a name
    first enters S&P 500 / 400 Leaders top 10. Answers "does this find future winners earlier?"
+   Baseline (`docs/research/00-lead-time.md`): Fast Rank Momentum entries later join the Leaders top 10
+   35–37% of the time, a median 95–117 days early; Megacap Laggards 19% (145 d); Munger Dip 9%.
 7. **New instrument `short`** (§10).
 
 ---

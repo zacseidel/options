@@ -32,8 +32,9 @@ function h(tag, attrs = {}, ...children) {
 let META = null;
 let STOCKS = new Set();
 const stockLink = (key, label = key) => (STOCKS.has(key) ? h("a", { href: `#/stock/${encodeURIComponent(key)}` }, label) : h("span", {}, label));
-const stratName = (id) => META.strategies.find((s) => s.id === id)?.name || id;
-const catOf = (id) => META.categories.find((c) => c.id === id);
+const stratName = (id) => META.all.strategies.find((s) => s.id === id)?.name || id;
+const catOf = (id) => META.all.categories.find((c) => c.id === id);
+const windowLabel = (w) => (w === "all" ? "Since inception" : w === "since_added" ? "Since added" : w.toUpperCase());
 
 /** Sortable table. columns: [{key, label, num, render(row), sort(row), title}] */
 function table(columns, rows, { sortKey, desc = true, rowClass, compact } = {}) {
@@ -596,7 +597,9 @@ async function strategyPage(root, id) {
   const cat = catOf(s.category);
   const dates = sessions.slice(s.start, s.start + s.nav.length);
   root.appendChild(h("div", { class: "page-head" },
-    h("div", {}, h("div", { class: "muted small" }, s.options
+    h("div", {}, h("div", { class: "muted small" }, s.stage === "lab"
+        ? [h("a", { href: "#/lab" }, "Lab"), " / ", h("a", { href: `#/category/${cat.id}` }, cat.name), s.added ? ` · added ${fmtDate(s.added)}` : ""]
+        : s.options
         ? [h("a", { href: "#/options" }, "Options"), " / ", h("a", { href: `#/strategy/${s.base}` }, stratName(s.base))]
         : [h("a", { href: "#/strategies" }, "Strategies"), " / ", h("a", { href: `#/category/${cat.id}` }, cat.name)]),
       h("h1", {}, s.name),
@@ -656,7 +659,7 @@ async function strategyPage(root, id) {
     lineChart(ddHolder, { dates: slice(dates), series: [{ name: "Drawdown", values: dd, color: css("--series-1") }], height: 160, baseline: 0, area: true, format: (v) => pct(v, 0) });
   };
   controls.append(
-    seg(META.windows.map((w) => [w, w === "all" ? "Since inception" : w.toUpperCase()]), state.window, (v) => { state.window = v; draw(); }),
+    seg([...META.windows, ...(s.metrics.since_added ? ["since_added"] : [])].map((w) => [w, windowLabel(w)]), state.window, (v) => { state.window = v; draw(); }),
     seg([["nav", "Total return"], ["nav_price", "Price only"]], state.basis, (v) => { state.basis = v; draw(); }),
     seg([[true, "Log scale"], [false, "Linear"]], state.log, (v) => { state.log = v; draw(); }));
   draw();
@@ -859,9 +862,10 @@ async function categoryPage(root, id) {
   const data = await categoryData(id);
   const latest = reportWithDiff(data, data.dates[data.dates.length - 1]);
   root.appendChild(h("div", { class: "page-head" }, h("div", {},
-    h("div", { class: "muted small" }, h("a", { href: "#/categories" }, "Categories"), " / ", cat.group),
+    h("div", { class: "muted small" }, h("a", { href: cat.stage === "lab" ? "#/lab" : "#/categories" }, cat.stage === "lab" ? "Lab" : "Categories"), " / ", cat.group),
     h("h1", {}, cat.name), h("p", { class: "lede" }, cat.description),
-    h("p", { class: "muted small" }, `${cat.reports} reports since ${fmtDate(cat.first)} · universe ${cat.universe}`))));
+    h("p", { class: "muted small" }, `${cat.reports} reports since ${fmtDate(cat.first)} · universe ${cat.universe}`),
+    leadTimeLine(cat))));
   root.append(h("h2", {}, `Latest · ${fmtDate(latest.date)}`), reportTable(cat, latest), droppedLine(latest));
 
   // Membership over the last 40 reports: who was listed, at what rank.
@@ -886,7 +890,7 @@ async function categoryPage(root, id) {
     h("p", { class: "muted small" }, `Darker = higher rank. ${fmtDate(recent[0])} → ${fmtDate(recent[recent.length - 1])}.`),
     h("div", { class: "card" }, heat));
 
-  const strategies = META.strategies.filter((s) => s.category === id && !s.options);
+  const strategies = META.all.strategies.filter((s) => s.category === id && !s.options);
   root.append(h("h2", {}, "Strategies on this category"), table([
     { key: "name", label: "Strategy", render: (s) => h("a", { href: `#/strategy/${s.id}` }, s.name) },
     { key: "hold", label: "Method", render: (s) => `${s.instrument}, ${s.hold}` },
@@ -1016,8 +1020,64 @@ function methodologyPage(root) {
     p("Both feeds are read from the smartmoney ledgers (fetching still runs through its code); every score here is recomputed point-in-time from the raw filings."));
 }
 
+// ------------------------------------------------------------------ lab
+/** Lab categories and strategies (new, on trial) are kept off every other list; META.all has everything. */
+function splitLab(meta) {
+  meta.all = { categories: meta.categories, strategies: meta.strategies };
+  const labCats = new Set(meta.categories.filter((c) => c.stage === "lab").map((c) => c.id));
+  const isLab = (s) => s.stage === "lab" || labCats.has(s.category);
+  meta.lab = { categories: meta.categories.filter((c) => labCats.has(c.id)), strategies: meta.strategies.filter(isLab) };
+  meta.categories = meta.categories.filter((c) => !labCats.has(c.id));
+  meta.strategies = meta.strategies.filter((s) => !isLab(s));
+}
+
+function leadTimeLine(cat) {
+  const lt = cat.lead_time;
+  if (!lt) return null;
+  return h("p", { class: "muted small", title: "An entry leads if the name was not a Leaders top-10 name in the prior 30 days and joins within a year." },
+    `Lead time: ${pct(lt.became_leader, 0)} of ${lt.entries} entries later joined ${catOf(lt.leaders)?.name || lt.leaders} top 10`,
+    lt.median_lead_days != null ? ` (median ${lt.median_lead_days} days later)` : "", `; ${pct(lt.already_leader, 0)} were already there.`);
+}
+
+async function labPage(root) {
+  root.appendChild(h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Lab"),
+    h("p", { class: "lede" }, "New categories and methods on trial. Each runs with the same evaluation as everything else; its rules are frozen on the date it was added, so results since then are out of sample. Promoted, edited or retired at each quarterly review."))));
+  const rows = META.lab.strategies;
+  if (!rows.length) {
+    root.appendChild(h("p", { class: "empty" }, "Nothing on trial yet. New signal families (docs/PLAN-signals.md) appear here as they are built."));
+  } else {
+    const added = (s) => s.metrics.since_added || {};
+    const days = (s) => (s.added ? Math.round((new Date(META.data_through) - new Date(s.added)) / 864e5) : null);
+    root.appendChild(table([
+      { key: "name", label: "Strategy", sort: (r) => r.name, cls: () => "name-col", render: (r) => h("a", { href: `#/strategy/${r.id}` }, r.name) },
+      { key: "added", label: "Added", sort: (r) => r.added, render: (r) => (r.added ? fmtDate(r.added) : "—") },
+      { key: "cagr", label: "Backtest CAGR", num: true, sort: (r) => r.metrics.all?.cagr, cls: (r) => cls(r.metrics.all?.excess_cagr), render: (r) => pct(r.metrics.all?.cagr) },
+      { key: "sharpe", label: "Sharpe", num: true, sort: (r) => r.metrics.all?.sharpe, render: (r) => num(r.metrics.all?.sharpe) },
+      { key: "dd", label: "Max DD", num: true, sort: (r) => r.metrics.all?.max_drawdown, render: (r) => pct(r.metrics.all?.max_drawdown, 0) },
+      { key: "since", label: "Since added", num: true, title: "Total return since the added date (out of sample)", sort: (r) => added(r).total_return, cls: (r) => cls(added(r).total_return), render: (r) => pct(added(r).total_return, 1) },
+      { key: "since_spy", label: "SPY same", num: true, sort: (r) => added(r).benchmark_total_return, render: (r) => pct(added(r).benchmark_total_return, 1) },
+      { key: "days", label: "Days", num: true, title: "Calendar days on trial", sort: days, render: (r) => days(r) ?? "—" },
+      { key: "hold", label: "Holding now", nosort: true, cls: () => "nowrap", render: (r) => h("span", {}, (r.holdings || []).slice(0, 6).map((k) => h("span", { class: "chip link" }, stockLink(k)))) },
+    ], rows, { sortKey: "cagr" }));
+  }
+  if (META.lab.categories.length) {
+    root.appendChild(h("h2", {}, "Lab categories"));
+    const grid = h("div", { class: "grid cols-2" });
+    root.appendChild(grid);
+    for (const cat of META.lab.categories) {
+      const data = await categoryData(cat.id);
+      const report = reportWithDiff(data, data.dates[data.dates.length - 1]);
+      grid.appendChild(h("div", { class: "card report-card" },
+        h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name), h("span", { class: "muted small" }, cat.group)),
+        h("p", { class: "ink2 small", style: "margin:0 0 8px" }, cat.description),
+        report ? reportTable(cat, report, { compact: true, limit: 10 }) : h("p", { class: "empty" }, "No report yet."),
+        leadTimeLine(cat)));
+    }
+  }
+}
+
 // ------------------------------------------------------------------ shell
-const NAV = [["#/", "Overview"], ["#/reports", "Reports"], ["#/strategies", "Strategies"], ["#/options", "Options"], ["#/categories", "Categories"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
+const NAV = [["#/", "Overview"], ["#/reports", "Reports"], ["#/strategies", "Strategies"], ["#/options", "Options"], ["#/lab", "Lab"], ["#/categories", "Categories"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
 
 function shell() {
   const nav = h("nav", { class: "main" }, NAV.map(([href, label]) => h("a", { href }, label)));
@@ -1054,8 +1114,10 @@ async function route() {
   navEl.querySelectorAll("a").forEach((x) => {
     const target = x.getAttribute("href").slice(2);
     x.classList.toggle("here", target === page || (target === "reports" && ["report", "compare"].includes(page))
-      || (target === "strategies" && page === "strategy" && !META.strategies.find((x) => x.id === a)?.options)
-      || (target === "options" && page === "strategy" && META.strategies.find((x) => x.id === a)?.options) || (target === "categories" && page === "category") || (target === "stocks" && page === "stock") || (target === "congress" && page === "member") || (target === "hedge" && page === "fund"));
+      || (target === "strategies" && page === "strategy" && META.strategies.find((x) => x.id === a) && !META.strategies.find((x) => x.id === a).options)
+      || (target === "options" && page === "strategy" && META.strategies.find((x) => x.id === a)?.options)
+      || (target === "lab" && ((page === "strategy" && META.lab.strategies.some((x) => x.id === a)) || (page === "category" && META.lab.categories.some((x) => x.id === a))))
+      || (target === "categories" && page === "category" && !META.lab.categories.some((x) => x.id === a)) || (target === "stocks" && page === "stock") || (target === "congress" && page === "member") || (target === "hedge" && page === "fund"));
   });
   main.classList.add("loading");
   const root = h("div");
@@ -1067,6 +1129,7 @@ async function route() {
     else if (page === "strategies") await strategiesPage(root);
     else if (page === "strategy") await strategyPage(root, a);
     else if (page === "options") await optionsPage(root);
+    else if (page === "lab") await labPage(root);
     else if (page === "categories") await categoriesPage(root);
     else if (page === "category") await categoryPage(root, a);
     else if (page === "stocks") await stocksPage(root);
@@ -1090,6 +1153,7 @@ async function route() {
 
 (async function start() {
   META = await load("meta.json");
+  splitLab(META);
   STOCKS = new Set(META.stocks.map((s) => s[0]));
   navEl = shell();
   document.querySelector("footer").textContent = `Generated ${META.generated_at.replace("T", " ")} · data through ${fmtDate(META.data_through)} · research tool, not investment advice`;
