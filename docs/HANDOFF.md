@@ -1,4 +1,4 @@
-# Handoff — where things stand (2026-10-09, late)
+# Handoff — where things stand (2026-10-21)
 
 Read this first, then `docs/PLAN.md` (Status table at the top) for the full design.
 
@@ -8,7 +8,7 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 40 tests
+.venv/bin/python -m pytest -q                   # 43 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
@@ -115,7 +115,14 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
 - **Caveats**: 2 years; no spread cost; for 24–28% of S&P 500 holdings no 12m call qualified (held stock).
   CSPs still use 14–21d (momentum) / 30–45d (laggards), not the ~21d of covered calls.
 
-## Fixed earlier this session
+## Fixed 2026-10-21 (scheduled-run bugs)
+- The 17:30 run failed every weekday on `options`: before a session's OPRA file is published the
+  bucket answers 403 (later NoSuchKey). A 403 within `RECENT_403_DAYS` (4) of today now counts as
+  "not published yet" (`option_panel._unpublished`); older 403s still raise.
+- `run.sh`: `$(date +%H)` of `08`/`09` was read as bad octal, so a catch-up at 08–09h targeted *today*
+  and could stamp the day done before the close. Now `10#$(date +%H)`.
+
+## Fixed earlier
 - `.gitignore` `data/` was hiding `src/market/data/` → now `/data/`; package committed.
 - Ticker-history gaps (Polygon events incomplete): Honeywell pre-2026 `HON`, Fiserv 2023–25 `FI`.
   New rules in `securities.ticker_history_rows` + `bars.repair_gaps()` (35 gaps filled).
@@ -131,8 +138,8 @@ section with digest cards. Data: `site/data/congress.json`, `hedge.json` (export
 1. launchd agent **installed 2026-10-10** (`~/Library/LaunchAgents/com.zacseidel.market.daily.plist`,
    loaded; test fire exited 0). Skips on battery. Check: `launchctl print gui/$(id -u)/com.zacseidel.market.daily`,
    logs `~/Library/Logs/market/`. Re-copy the plist + `launchctl bootout`/`bootstrap` after editing it.
-   **Still needs your OK:** GitHub repo `zacseidel/options` and site publishing (site/data is gitignored,
-   so publishing = a step that pushes the built site; free Pages needs a public repo).
+   GitHub repo `zacseidel/options` is **public** (main pushed). **Still needs your OK:** site publishing —
+   Pages is not enabled and site/data is gitignored, so publishing = a step that pushes the built site.
 2. Options: re-run the grid periodically and revisit the tracked set; consider aligning CSPs to ~21d;
    the 13F/Congress categories have no option data yet.
 3. 13F history is short (smartmoney ledger starts with Aug-2024 filings and keeps a sliding

@@ -26,7 +26,7 @@ exec > >(tee -a "$LOG") 2>&1
 say() { echo "$(date '+%Y-%m-%d %H:%M:%S')  $*"; }
 
 # The 07:00 catch-up belongs to the previous day's session.
-if [[ $(date +%H) -lt 12 ]]; then day="$(date -v-1d +%Y-%m-%d)"; else day="$(date +%Y-%m-%d)"; fi
+if [[ 10#$(date +%H) -lt 12 ]]; then day="$(date -v-1d +%Y-%m-%d)"; else day="$(date +%Y-%m-%d)"; fi
 
 if [[ $FORCE -eq 0 ]]; then
   if ! pmset -g ps | grep -q "AC Power"; then say "SKIP: on battery"; exit 0; fi

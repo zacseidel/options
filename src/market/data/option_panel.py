@@ -82,11 +82,23 @@ def needed_by_session(windows: pd.DataFrame, sessions: pd.DatetimeIndex, start: 
     return out
 
 
-def _stream(session: date, roots: dict[str, str], spot: dict[str, float], bands: dict):
+# Before a session's file is published (~11:00 ET next day) the bucket can answer 403 rather
+# than NoSuchKey; within this many calendar days of `today` a 403 means "not published yet".
+RECENT_403_DAYS = 4
+
+
+def _unpublished(exc: ClientError, session: date, today: date) -> bool:
+    code = exc.response.get("Error", {}).get("Code")
+    if code in ("NoSuchKey", "404"):
+        return True
+    return code in ("403", "AccessDenied", "Forbidden") and (today - session).days <= RECENT_403_DAYS
+
+
+def _stream(session: date, roots: dict[str, str], spot: dict[str, float], bands: dict, today: date):
     try:
         rows, size = flatfiles.read_day("options_day", session)
     except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+        if _unpublished(exc, session, today):
             return session, None, 0
         raise
     spot_by_root = {root: spot[root] for root in roots if root in spot}
@@ -120,7 +132,7 @@ def sync(dry_run: bool = False, today: date | None = None) -> dict:
             ts = pd.Timestamp(d)
             spot = {root: float(panel.raw_close.at[ts, sid]) for root, sid in roots.items()
                     if sid in panel.raw_close.columns and pd.notna(panel.raw_close.at[ts, sid])}
-            futures.append(pool.submit(_stream, d, roots, spot, bands))
+            futures.append(pool.submit(_stream, d, roots, spot, bands, today or date.today()))
         for done, future in enumerate(as_completed(futures), 1):
             session, frame, size = future.result()
             if frame is None:                      # not published yet (or outside the plan window)

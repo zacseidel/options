@@ -54,3 +54,18 @@ def test_filter_keeps_only_band_rows():
     assert list(kept.columns) == ["session", "root", "expiry", "kind", "strike", "open", "close", "volume", "transactions"]
     assert kept.loc[4, "kind"] == "C" and kept.loc[4, "strike"] == 70.0
     assert occ_ticker(kept.loc[0, "root"], kept.loc[0, "expiry"].date(), kept.loc[0, "kind"], kept.loc[0, "strike"]) == tickers[0]
+
+
+def _client_error(code: str):
+    from botocore.exceptions import ClientError
+    return ClientError({"Error": {"Code": code, "Message": ""}}, "GetObject")
+
+
+def test_recent_403_counts_as_unpublished():
+    from market.data.option_panel import _unpublished
+    today = date(2026, 10, 20)
+    assert _unpublished(_client_error("403"), date(2026, 10, 20), today)
+    assert _unpublished(_client_error("403"), date(2026, 10, 16), today)      # Friday, seen Monday
+    assert not _unpublished(_client_error("403"), date(2026, 9, 1), today)    # old: a real entitlement error
+    assert _unpublished(_client_error("NoSuchKey"), date(2026, 9, 1), today)
+    assert not _unpublished(_client_error("SlowDown"), date(2026, 10, 20), today)
