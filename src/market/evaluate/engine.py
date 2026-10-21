@@ -47,6 +47,8 @@ class Strategy:
 
 
 STAGES = ("lab", "tracked", "retired")
+STOCK_LIKE = ("stock", "short")                  # instruments built from a hold rule's trades directly
+OPTION_INSTRUMENTS = ("csp", "covered_call", "leap", "diagonal")
 
 
 def _added(value) -> date | None:
@@ -57,15 +59,28 @@ def load_strategies(path=None) -> list[Strategy]:
     raw = yaml.safe_load((path or ROOT / "strategies.yaml").read_text())
     defaults = raw.get("defaults") or {}
     out = []
+    overlays = []
     for spec in raw["strategies"]:
         spec = {**defaults, **spec}
         stage = spec.get("stage", "tracked")
         if stage not in STAGES:
             raise ValueError(f"{spec['id']}: stage must be one of {STAGES}, not {stage!r}")
+        if "overlay" in spec:                     # a long strategy plus a short strategy, resolved below
+            overlays.append((spec, stage))
+            continue
+        method = {"borrow": spec.get("borrow", 0.005)} if spec["instrument"] == "short" else {}
         out.append(Strategy(spec["id"], spec["category"], spec["slot"], spec["hold"],
                             spec.get("params") or {}, spec["instrument"], spec.get("visible", True),
-                            stage=stage, added=_added(spec.get("added"))))
-    out.extend(option_strategies(raw.get("option_methods"), {s.id: s for s in out}))
+                            method=method, stage=stage, added=_added(spec.get("added"))))
+    by_id = {s.id: s for s in out}
+    for spec, stage in overlays:
+        o = spec["overlay"]
+        long = by_id[o["long"]]
+        method = {**o, "short_category": by_id[o["short"]].category,
+                  "label": f"+ {o['weight']:.0%} short {by_id[o['short']].category}"}
+        out.append(Strategy(spec["id"], long.category, long.slot, long.hold, long.params, "overlay",
+                            spec.get("visible", True), method=method, stage=stage, added=_added(spec.get("added"))))
+    out.extend(option_strategies(raw.get("option_methods"), by_id))
     return out
 
 
@@ -209,6 +224,37 @@ def build_nav(trades: list[Trade], panel: Panel, mult: pd.DataFrame, start: pd.T
     return pd.DataFrame({"nav": out["total"], "nav_price": out["price"], "positions": counts}, index=sessions)
 
 
+def as_short(frame: pd.DataFrame, nav: pd.DataFrame, rf: float, borrow: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Turn a long basket into its short: each day the short earns the T-bill rate on the proceeds, loses
+    the basket's total return (so it pays the dividends) and pays a borrow fee while positions are open."""
+    held = nav["positions"].shift(1).fillna(0) > 0
+    out = nav.copy()
+    for col in ("nav", "nav_price"):
+        r = nav[col].pct_change().fillna(0.0)
+        short = (rf / 252 - r - borrow / 252).where(held, rf / 252)
+        out[col] = 100 * (1 + short).cumprod()
+    trades = frame.copy()
+    days = (pd.to_datetime(trades["_mark_date"]) - pd.to_datetime(trades["entry_date"])).dt.days
+    for col in ("return_total", "return_price"):
+        trades[col] = -trades[col] - borrow * days / 365
+    return trades, out
+
+
+def overlay_nav(long: pd.DataFrame, short: pd.DataFrame, weight: float, rf: float) -> pd.DataFrame:
+    """A long strategy fully invested plus `weight` of capital shorted in a short strategy's basket, on the
+    long's dates. While the short holds nothing, the overlay is just the long (no extra T-bill credit)."""
+    dates = long.index
+    out = pd.DataFrame(index=dates)
+    held = short["positions"].reindex(dates).shift(1).fillna(0) > 0
+    for col in ("nav", "nav_price"):
+        r_long = long[col].pct_change().fillna(0.0)
+        r_short = short[col].reindex(dates).pct_change().fillna(0.0)
+        r = r_long + weight * r_short.where(held, 0.0)
+        out[col] = 100 * (1 + r).cumprod()
+    out["positions"] = long["positions"] + short["positions"].reindex(dates).fillna(0).astype(int)
+    return out
+
+
 def benchmark_navs(con: duckdb.DuckDBPyConnection, panel: Panel, mult: pd.DataFrame, start: pd.Timestamp) -> dict:
     ids = dict(con.execute(
         f"SELECT ticker, security_id FROM securities WHERE type = 'ETF' AND ticker IN "
@@ -249,10 +295,12 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
     everything = load_strategies()
     # Retired strategies keep their stored results but are no longer re-evaluated.
     strategies = [s for s in everything if (s.stage != "retired" or strategy_ids) and (not strategy_ids or s.id in strategy_ids)]
-    option_strats = [s for s in strategies if s.instrument != "stock"]
-    # Option strategies reuse their base's windows, so a base is always evaluated with them.
-    needed_bases = {s.base for s in option_strats}
-    strategies = [s for s in everything if s.instrument == "stock" and (s in strategies or s.id in needed_bases)]
+    option_strats = [s for s in strategies if s.instrument in OPTION_INSTRUMENTS]
+    overlay_strats = [s for s in strategies if s.instrument == "overlay"]
+    # Option strategies reuse their base's windows, and overlays combine two strategies' NAVs, so those
+    # are always evaluated with them.
+    needed_bases = {s.base for s in option_strats} | {s.method[k] for s in overlay_strats for k in ("long", "short")}
+    strategies = [s for s in everything if s.instrument in STOCK_LIKE and (s in strategies or s.id in needed_bases)]
     starts, summary, base_trades = [], {}, {}
 
     for strat in strategies:
@@ -268,6 +316,8 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
         starts.append(start)
         frame = trade_frame(strat, trades, panel, mult)
         nav = build_nav(trades, panel, mult, start)
+        if strat.instrument == "short":
+            frame, nav = as_short(frame, nav, cfg["risk_free_rate"], strat.method["borrow"])
 
         closed = frame[frame["status"] == "closed"]
         hold_days = (pd.to_datetime(closed["exit_date"]) - pd.to_datetime(closed["entry_date"])).dt.days
@@ -295,6 +345,15 @@ def evaluate(strategy_ids: list[str] | None = None) -> dict:
             replace_rows(con, "nav_daily", res["nav"].reset_index(names="date").assign(strategy_id=sid)[
                 ["strategy_id", "date", "nav", "nav_price", "positions"]], "strategy_id = ?", [sid])
             summary[sid] = {"nav": res["nav"], "stats": res["stats"]}
+
+    for strat in overlay_strats:
+        nav = overlay_nav(summary[strat.method["long"]]["nav"], summary[strat.method["short"]]["nav"],
+                          strat.method["weight"], cfg["risk_free_rate"])
+        replace_rows(con, "nav_daily", nav.reset_index(names="date").assign(strategy_id=strat.id)[
+            ["strategy_id", "date", "nav", "nav_price", "positions"]], "strategy_id = ?", [strat.id])
+        # Trade statistics live on the two parts; the overlay itself has only a NAV.
+        summary[strat.id] = {"nav": nav, "stats": {"exposure": round(float((nav["positions"] > 0).mean()), 4),
+                                                   "closed_trades": 0, "open_trades": 0}}
 
     now = datetime.now()
     metric_rows = []

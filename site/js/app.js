@@ -143,6 +143,7 @@ const FEATURE_LABELS = {
   ps_chg: ["P/S change", (v) => pct(v, 0, true)], ps: ["P/S", (v) => num(v, 1)], buybacks_ttm: ["Buybacks (TTM)", money],
   days_to_cover: ["Days to cover", (v) => num(v, 1)],
   longevity: ["Weeks in top 50", (v) => (v == null ? "—" : `${Math.round(v * 26)}/26`)],
+  cut: ["Dividend cut", (v) => pct(v, 0, true)],
   raise: ["Dividend raise", (v) => pct(v, 0, true)],
   ear: ["Reaction vs SPY", (v) => pct(v, 1, true)], gap: ["Gap", (v) => pct(v, 1, true)],
   vol_ratio: ["Volume ×", (v) => (v == null ? "—" : `${v.toFixed(1)}×`)],

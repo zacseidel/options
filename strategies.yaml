@@ -83,6 +83,10 @@ strategies:
   - {id: pead_down_sp900.all.hold42, category: pead_down_sp900, slot: all, hold: fixed_hold, params: {sessions: 42}, stage: lab, added: 2026-10-21}
   # Dividend raises ≥ 10% (docs/research/06-corporate-actions.md): one lot per announcement, held 126 sessions.
   - {id: divraise_sp900.all.hold126, category: divraise_sp900, slot: all, hold: fixed_hold, params: {sessions: 126}, stage: lab, added: 2026-10-21}
+  # Shorts (docs/research/09-shorts.md): dividend cutters held short 126 sessions (borrow 0.5%/yr), and the
+  # S&P 500 Leaders short-interest filter with 30% of capital shorted in that basket.
+  - {id: divcut_sp900.all.short126, category: divcut_sp900, slot: all, hold: fixed_hold, params: {sessions: 126}, instrument: short, borrow: 0.005, stage: lab, added: 2026-10-21}
+  - {id: mom12si_sp500.top5.divcut_hedge30, overlay: {long: mom12si_sp500.top5, short: divcut_sp900.all.short126, weight: 0.3}, stage: lab, added: 2026-10-21}
 
 # ------------------------------------------------------------------ options (PLAN §7b, D10–D13)
 # Each method below is run on each base strategy's own windows (same entries and exits as the

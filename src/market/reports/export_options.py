@@ -11,6 +11,7 @@ import pandas as pd
 
 from market.data.options import option_root
 from market.evaluate.options_engine import load_option_data
+from market.evaluate.engine import OPTION_INSTRUMENTS
 from market.methods.instruments.options import Book, _leap_pick, _short_pick
 
 
@@ -80,7 +81,7 @@ def _stock_same(metrics_by: dict, base_id: str, methods) -> dict:
 
 def build(con, panel, strategies, metrics_by: dict, navs: pd.DataFrame, session_index: dict, key_of: dict,
           strategy_label) -> dict:
-    option_strats = [s for s in strategies if s.instrument != "stock"]
+    option_strats = [s for s in strategies if s.instrument in OPTION_INSTRUMENTS and s.stage != "lab"]
     if not option_strats:
         return {}
     data = load_option_data(con, panel)

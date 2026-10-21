@@ -61,6 +61,7 @@ KEY_FEATURES = {
     "pead_up_sp900": ["ear", "gap", "vol_ratio"],
     "pead_down_sp900": ["ear", "gap", "vol_ratio"],
     "divraise_sp900": ["raise"],
+    "divcut_sp900": ["cut"],
     "steady_sp500": ["longevity", "rank_12m", "return_12m"],
     "mom12si_sp500": ["return_12m", "days_to_cover", "rank_change"],
 }
@@ -103,6 +104,14 @@ def strategy_label(strategy) -> dict:
         f"top {strategy.slot[1]}" if strategy.slot[0] == 1 else f"ranks {strategy.slot[0]}–{strategy.slot[1]}")
     hold = HOLD_LABELS[strategy.hold].format(**{k: str(v).upper() if k == "indicator" else v
                                                 for k, v in strategy.params.items()})
+    if strategy.instrument == "short":
+        return {"name": f"{cat.name} · {slot} · short", "slot": slot, "hold": hold,
+                "instrument": f"short (borrow {strategy.method['borrow']:.1%}/yr)"}
+    if strategy.instrument == "overlay":
+        m = strategy.method
+        hedge = f"+ {m['weight']:.0%} short {REGISTRY[m['short_category']].name}"
+        return {"name": f"{cat.name} · {slot} · {hedge}", "slot": slot, "hold": hold,
+                "instrument": f"long, {hedge} (see the two strategies for trades)"}
     if strategy.instrument != "stock":
         return {"name": f"{cat.name} · {slot} · {strategy.method['label']}", "slot": slot, "hold": hold,
                 "instrument": strategy.method["label"], "options": True, "base": strategy.base}
@@ -191,7 +200,7 @@ def export() -> dict:
                       for r in t.itertuples(index=False)]
         label = strategy_label(strat)
         extra = {}
-        if strat.instrument != "stock":
+        if strat.instrument not in ("stock", "short", "overlay"):
             extra["leg_fields"] = ["kind", "side", "expiry", "strike", "open", "open_px", "delta", "iv",
                                    "close", "close_px", "reason", "qty"]
             extra["legs"] = [[[g.kind, g.side, g.expiry, _num(g.strike, 2), g.open_date, _num(g.open_price, 4),

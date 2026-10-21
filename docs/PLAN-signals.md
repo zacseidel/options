@@ -241,7 +241,18 @@ days) and `short_volume` (daily, 2024 →). Used three ways: a **risk column** o
 (days to cover, % of float); `squeeze` category (days to cover ≥ 5 and price rank rising); and an input to
 the shorts in §10.
 
-## 10. Shorts (Phase 8)
+## 10. Shorts (Phase 8) — built 2026-10-21
+
+**Status.** Engine: instrument `short` (rf on proceeds − basket total return, so dividends are paid, − borrow;
+default 0.5%/yr) and `overlay` strategies (a long fully invested + a weight of capital shorted in a short
+strategy's basket). Research `docs/research/09-shorts.md` scored seven candidate lists short, paired vs SPY,
+and as a 30% hedge on S&P 500 Leaders (short-interest filter). In this rising market most lists lag SPY but
+still rise, so shorting them lost money (decliners −16%/yr, heavily shorted −8%, weak earnings −5%, IV
+warning −4%) and hedging with them cut returns. **Dividend cuts are the exception**: the stocks fell ~7% a
+year; short alone ≈ T-bill (3%); as a 30% hedge, 73% a year / Sharpe 1.17 vs 68% / 1.08 unhedged, better in
+both halves, same worst drop. Only 82 cuts (~8 open at a time), so thin. Kept (Lab): **Dividend Cutters
+(short)** and **S&P 500 Leaders SI filter + 30% Dividend Cutters short**.
+
 
 **Instrument `short`**: sell at the same fills as long stock, pay dividends, earn the T-bill rate on proceeds
 minus a borrow fee ▸ DEFAULT 0.5%/yr, 3%/yr when short interest > 10% of float; position capital = proceeds,

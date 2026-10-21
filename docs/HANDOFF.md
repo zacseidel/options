@@ -11,7 +11,7 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 60 tests
+.venv/bin/python -m pytest -q                   # 63 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
@@ -146,7 +146,10 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   last close (Biogen 2023-06-09 broke a NAV).
 - **Phase 7 (done):** short interest — PLAN-signals §9; Lab: S&P 500 Leaders, Short-Interest Filter.
   `python -m market.data.short_interest [--backfill]`, `python -m market.research.short_interest`.
-- Next: Phase 8 (shorts), 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
+- **Phase 8 (done):** shorts — PLAN-signals §10. Engine instruments `short` and `overlay` (strategies.yaml:
+  `instrument: short, borrow: …` and `overlay: {long, short, weight}`). Lab: Dividend Cutters short and the
+  Leaders-SI + 30% dividend-cut hedge. `python -m market.research.shorts` (~1 min).
+- Next: Phase 9 (convergence), 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
   clear decliners as candidates), 9 (convergence).
 
 ## Fixed 2026-10-21 (scheduled-run bugs)

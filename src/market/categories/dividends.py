@@ -40,3 +40,21 @@ def divraise_sp900(ctx: Context) -> pd.DataFrame:
               & (ev["date"] <= ctx.as_of) & ev["security_id"].isin(ids)]
     part = part.sort_values("change", ascending=False).drop_duplicates("security_id").set_index("security_id")
     return part[["change"]].rename(columns={"change": "raise"}).assign(score=part["change"])
+
+
+CUT_MAX = -0.10
+
+
+@category("divcut_sp900", "Dividend Cutters", "Corporate actions", "sp900",
+          "S&P 500 / 400 companies that announced a regular dividend at least 10% below the previous one "
+          "(same frequency), listed once when announced. A short-candidate list: these fell ~7% a year.",
+          lookback_sessions=5, stage="lab")
+def divcut_sp900(ctx: Context) -> pd.DataFrame:
+    ev = ctx.source("dividend_events")
+    previous = ctx.report_date - timedelta(days=3 if ctx.report_date.weekday() == 4 else 4)
+    prev_as_of = ctx.panel.session_on_or_before(previous - timedelta(days=1))
+    ids = set(ctx.members("sp500")) | set(ctx.members("sp400"))
+    part = ev[(ev["type"] == "cut") & (ev["change"] <= CUT_MAX) & (ev["date"] > prev_as_of)
+              & (ev["date"] <= ctx.as_of) & ev["security_id"].isin(ids)]
+    part = part.sort_values("change").drop_duplicates("security_id").set_index("security_id")
+    return part[["change"]].rename(columns={"change": "cut"}).assign(score=-part["change"])

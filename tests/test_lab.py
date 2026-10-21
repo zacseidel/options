@@ -141,3 +141,22 @@ def test_short_interest_reading_waits_for_publication():
     assert si.on(pd.Timestamp("2026-10-09")).at["A", "days_to_cover"] == 2.0     # the 09-30 reading isn't out yet
     assert si.on(pd.Timestamp("2026-10-12")).at["A", "days_to_cover"] == 5.0
     assert si.on(pd.Timestamp("2026-12-31")).empty                                # too old after 45 days
+
+
+def test_short_and_overlay_navs():
+    from market.evaluate.engine import as_short, overlay_nav
+    idx = pd.bdate_range("2026-01-05", periods=4)
+    basket = pd.DataFrame({"nav": [100.0, 110.0, 99.0, 99.0], "nav_price": [100.0, 110.0, 99.0, 99.0],
+                           "positions": [1, 1, 1, 0]}, index=idx)
+    trades = pd.DataFrame({"return_total": [0.10], "return_price": [0.10], "entry_date": [idx[0].date()],
+                           "_mark_date": [idx[3].date()]})
+    tr, short = as_short(trades, basket, rf=0.0, borrow=0.0)
+    assert short["nav"].iloc[1] == pytest.approx(90.0)            # basket +10% → short −10%
+    assert short["nav"].iloc[2] == pytest.approx(90.0 * 1.10)     # basket −10% → short +10%
+    assert short["nav"].iloc[3] == pytest.approx(short["nav"].iloc[2])
+    assert tr["return_total"].iloc[0] == pytest.approx(-0.10)
+    long = pd.DataFrame({"nav": [100.0, 101.0, 102.01, 103.03], "nav_price": [100.0, 101.0, 102.01, 103.03],
+                         "positions": [5, 5, 5, 5]}, index=idx)
+    over = overlay_nav(long, short, 0.5, rf=0.0)
+    assert over["nav"].iloc[1] == pytest.approx(100 * (1 + 0.01 + 0.5 * -0.10))
+    assert over["nav"].iloc[3] / over["nav"].iloc[2] == pytest.approx(103.03 / 102.01)   # short flat: long only
