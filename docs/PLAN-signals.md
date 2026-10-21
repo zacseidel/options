@@ -266,15 +266,15 @@ losses uncapped and reported as such. Later: long puts as the option version (th
 strategy + an equal-dollar short basket, so we can see whether shorts cut drawdowns without giving back
 the return. Expect shorts to lose in rising markets; the question is the drawdown trade.
 
-## 11. Convergence (Phase 9, last) — built 2026-10-21
+## 11. Convergence (Phase 9, last) — researched 2026-10-21, strategies dropped
 
 **Status.** `docs/research/10-convergence.md`: six families (momentum, fundamentals, reversion, events,
 options, smart money) from the stored lists. Over the next 63 sessions vs the average member: one family
 +1.3% / +0.9% (before / after 2025), two +1.8% / +6.3%, three or more +5.2% / +11.5%; momentum + fundamentals
 the strongest consistent pair. Lab: **Convergence** (most families, ≥ 2) and **Momentum + Fundamentals**; as
 top-5 strategies from 2022-11 they returned 39% / 38% a year (Sharpe 0.74 / 0.68) vs SPY 20% (0.97) and S&P
-500 Leaders 60% (0.96) — kept pending the user's call. The convergence categories read the other categories'
-stored lists, so `market.categories.convergence` is imported last.
+500 Leaders 60% (0.96) — dropped at the user's call (no edge over the momentum lists they overlap with);
+the report is the record.
 
 
 `convergence`: names flagged by ≥ 2 independent families within 30 days — momentum, fundamentals, PEAD,

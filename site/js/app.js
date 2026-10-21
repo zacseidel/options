@@ -143,15 +143,13 @@ const FEATURE_LABELS = {
   ps_chg: ["P/S change", (v) => pct(v, 0, true)], ps: ["P/S", (v) => num(v, 1)], buybacks_ttm: ["Buybacks (TTM)", money],
   days_to_cover: ["Days to cover", (v) => num(v, 1)],
   longevity: ["Weeks in top 50", (v) => (v == null ? "—" : `${Math.round(v * 26)}/26`)],
-  families: ["Families", (v) => (v == null ? "—" : v.toFixed(0))], lists: ["Lists", (v) => (v == null ? "—" : v.toFixed(0))],
-  family_names: ["Flagged by", (v) => v || "—"],
   cut: ["Dividend cut", (v) => pct(v, 0, true)],
   raise: ["Dividend raise", (v) => pct(v, 0, true)],
   ear: ["Reaction vs SPY", (v) => pct(v, 1, true)], gap: ["Gap", (v) => pct(v, 1, true)],
   vol_ratio: ["Volume ×", (v) => (v == null ? "—" : `${v.toFixed(1)}×`)],
   term: ["IV 30d − long", (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)} pts`)],
 };
-const TEXT_FEATURES = new Set(["family_names", "dip_date", "members", "top_funds", "last_disclosed"]);
+const TEXT_FEATURES = new Set(["dip_date", "members", "top_funds", "last_disclosed"]);
 const GROUP_ORDER = ["Momentum", "Reversion", "Congress", "Hedge funds"];
 const shortDate = (v) => (v ? new Date(v + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—");
 const quarterOf = (d) => `Q${Math.floor((+d.slice(5, 7) - 1) / 3) + 1} ${d.slice(0, 4)}`;

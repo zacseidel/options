@@ -5,8 +5,8 @@ _Generated 2026-10-21 by `python -m market.research.convergence`._
 > **Outcome (2026-10-21).** Returns rise with the number of families flagging a name, in both halves;
 > momentum + fundamentals is the strongest consistent pair. As top-5 strategies (from 2022-11) Convergence
 > returned 39% a year (Sharpe 0.74) and Momentum + Fundamentals 38% (0.68): about twice SPY but at a lower
-> Sharpe, and below the momentum lists they overlap with (S&P 500 Leaders 60%, 0.96). Kept in the Lab for
-> the user's call.
+> Sharpe, and below the momentum lists they overlap with (S&P 500 Leaders 60%, 0.96). Dropped (user's
+> call); this report is the record.
 
 203 Friday reports, 2022-12-01 → 2026-10-15; name-dates flagged by at least one family: 35,524. Mean excess return vs the average member.
 

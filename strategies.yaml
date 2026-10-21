@@ -78,9 +78,6 @@ strategies:
   - {id: steady_sp500.top5,  category: steady_sp500,  slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
   # Short interest (docs/research/08-short-interest.md): S&P 500 Leaders skipping the most heavily shorted names.
   - {id: mom12si_sp500.top5,   category: mom12si_sp500,   slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  # Convergence (docs/research/10-convergence.md): names flagged by several independent signal families.
-  - {id: converge_sp900.top5,  category: converge_sp900, slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: momfund_sp900.top5,   category: momfund_sp900,  slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
   # Earnings reactions (docs/research/03-earnings.md): one lot per announcement, held 42 sessions.
   - {id: pead_up_sp900.all.hold42,   category: pead_up_sp900,   slot: all, hold: fixed_hold, params: {sessions: 42}, stage: lab, added: 2026-10-21}
   - {id: pead_down_sp900.all.hold42, category: pead_down_sp900, slot: all, hold: fixed_hold, params: {sessions: 42}, stage: lab, added: 2026-10-21}

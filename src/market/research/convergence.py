@@ -115,8 +115,8 @@ def main() -> None:
     outcome = ("> **Outcome (2026-10-21).** Returns rise with the number of families flagging a name, in both halves;\n"
                "> momentum + fundamentals is the strongest consistent pair. As top-5 strategies (from 2022-11) Convergence\n"
                "> returned 39% a year (Sharpe 0.74) and Momentum + Fundamentals 38% (0.68): about twice SPY but at a lower\n"
-               "> Sharpe, and below the momentum lists they overlap with (S&P 500 Leaders 60%, 0.96). Kept in the Lab for\n"
-               "> the user's call.\n\n")
+               "> Sharpe, and below the momentum lists they overlap with (S&P 500 Leaders 60%, 0.96). Dropped (user's\n"
+               "> call); this report is the record.\n\n")
     print(write_report(10, "convergence", "Convergence across signal families", outcome + "\n".join(lines) + "\n", {}))
     print("\n".join(lines))
 

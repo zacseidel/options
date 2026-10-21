@@ -8,4 +8,3 @@ import market.categories.earnings  # noqa: F401
 import market.categories.dividends  # noqa: F401
 import market.categories.steady  # noqa: F401
 import market.categories.short_interest  # noqa: F401
-import market.categories.convergence  # noqa: F401  (last: reads the other categories' stored lists)
