@@ -52,6 +52,18 @@ KEY_FEATURES = {
     "mom12iv_sp500": ["return_12m", "iv_rv", "rank_change"],
     "mom12iv_sp400": ["return_12m", "iv_rv", "rank_change"],
     "rankmomiv_sp500": ["avg_rank", "return_3m", "return_12m", "iv_rv"],
+    "fmom_sp500": ["gross_margin_chg", "op_margin_chg", "ni_ttm_yoy", "rev_yoy_q"],
+    "fmom_sp400": ["gross_margin_chg", "op_margin_chg", "ni_ttm_yoy", "rev_yoy_q"],
+    "emerging_sp500": ["fmom", "rank_12m", "rank_change", "op_margin_chg"],
+    "emerging_sp400": ["fmom", "rank_12m", "rank_change", "op_margin_chg"],
+    "compounders_sp500": ["rev_yoy_mean_8q", "rev_up_12q", "fcf_margin", "shares_yoy"],
+    "compounders_sp400": ["rev_yoy_mean_8q", "rev_up_12q", "fcf_margin", "shares_yoy"],
+    "rerating_sp500": ["ps_chg", "ps", "ni_ttm_yoy", "rev_ttm_yoy"],
+    "rerating_sp400": ["ps_chg", "ps", "ni_ttm_yoy", "rev_ttm_yoy"],
+    "shrinkers_sp500": ["shares_yoy", "buybacks_ttm", "fcf_margin"],
+    "shrinkers_sp400": ["shares_yoy", "buybacks_ttm", "fcf_margin"],
+    "laggards_mega10_fq": ["return_3m", "return_6m", "return_12m", "avg_rank"],
+    "munger_top50_fq": ["pct_vs_sma200", "dip_date", "market_cap"],
 }
 HOLD_LABELS = {
     "while_listed": "hold while listed",

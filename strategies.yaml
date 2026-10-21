@@ -65,6 +65,33 @@ strategies:
   - {id: mom12iv_sp500.next5,  category: mom12iv_sp500,   slot: [6, 10], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: mom12iv_sp400.top5,   category: mom12iv_sp400,   slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: rankmomiv_sp500.top5, category: rankmomiv_sp500, slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
+  # Fundamentals (docs/research/02-fundamentals.md): EDGAR facts as first filed.
+  - {id: fmom_sp500.top5, category: fmom_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: fmom_sp500.next5, category: fmom_sp500, slot: [6, 10], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: fmom_sp400.top5, category: fmom_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: fmom_sp400.next5, category: fmom_sp400, slot: [6, 10], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: emerging_sp500.top5, category: emerging_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: emerging_sp400.top5, category: emerging_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: compounders_sp500.top5, category: compounders_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: compounders_sp400.top5, category: compounders_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: rerating_sp500.top5, category: rerating_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: rerating_sp400.top5, category: rerating_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: shrinkers_sp500.top5, category: shrinkers_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: shrinkers_sp400.top5, category: shrinkers_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - id: laggards_mega10_fq.top2.hold21
+    category: laggards_mega10_fq
+    slot: [1, 2]
+    hold: fixed_hold
+    params: {sessions: 21}
+    stage: lab
+    added: 2026-10-21
+  - id: munger_top50_fq.all.ema21
+    category: munger_top50_fq
+    slot: all
+    hold: price_exit
+    params: {indicator: ema, window: 21, exit_when: below}
+    stage: lab
+    added: 2026-10-21
 
 # ------------------------------------------------------------------ options (PLAN §7b, D10–D13)
 # Each method below is run on each base strategy's own windows (same entries and exits as the

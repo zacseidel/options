@@ -26,7 +26,7 @@ import pandas as pd
 
 from market.data.option_flow import FEATURES, feature_panel
 from market.reports.snapshot import report_dates
-from market.research.common import forward_excess, markdown_table, spy_id, summarize, write_report
+from market.research.common import decile_returns, forward_excess, markdown_table, spread, spy_id, summarize, write_report
 from market.store.db import connect
 from market.store.panel import load_panel
 
@@ -51,20 +51,6 @@ def observations(con, panel) -> pd.DataFrame:
     joined = joined[(joined["valid_from"] <= joined["date"]) & (joined["valid_to"] > joined["date"])]
     joined = joined.drop(columns=["valid_from", "valid_to", "liquid"]).drop_duplicates(["date", "security_id"])
     return forward_excess(panel, joined, spy_id(con), HORIZONS)
-
-
-def decile_returns(obs: pd.DataFrame, feature: str, ret: str) -> pd.DataFrame:
-    """date × decile mean of `ret` (deciles formed within each date)."""
-    f = obs[["date", feature, ret]].dropna()
-    f = f[f.groupby("date")[feature].transform("size") >= DECILES * 3]
-    f["decile"] = f.groupby("date")[feature].transform(
-        lambda x: pd.qcut(x.rank(method="first"), DECILES, labels=False) + 1)
-    return f.groupby(["date", "decile"])[ret].mean().unstack()
-
-
-def spread(by_date: pd.DataFrame) -> dict:
-    s = (by_date[DECILES] - by_date[1]).dropna()
-    return summarize(s)
 
 
 def analyze(obs: pd.DataFrame, cut: pd.Timestamp) -> dict:

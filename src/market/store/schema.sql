@@ -293,3 +293,20 @@ CREATE TABLE IF NOT EXISTS option_flow_sessions (
     underlyings   INTEGER NOT NULL,
     computed_at   TIMESTAMP NOT NULL
 );
+
+-- ------------------------------------------------------------------ fundamentals (PLAN-signals §5)
+-- XBRL facts from EDGAR companyfacts for the metrics in market.data.fundamentals.CONCEPTS, every
+-- filing that reported them (10-K / 10-Q and amendments), periods ending 2015 or later. `filed` is
+-- the EDGAR filing date; a value is usable from the next session (point-in-time rule).
+CREATE TABLE IF NOT EXISTS fundamental_facts (
+    cik           BIGINT NOT NULL,
+    metric        VARCHAR NOT NULL,        -- our name (revenue, net_income, ...)
+    concept       VARCHAR NOT NULL,        -- the XBRL tag it came from
+    priority      TINYINT NOT NULL,        -- alias order within the metric (0 = preferred)
+    start         DATE,                    -- NULL for point-in-time (balance-sheet) values
+    "end"         DATE NOT NULL,
+    value         DOUBLE NOT NULL,
+    form          VARCHAR NOT NULL,
+    filed         DATE NOT NULL,
+    accn          VARCHAR NOT NULL
+);

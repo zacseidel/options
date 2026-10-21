@@ -114,3 +114,18 @@ def write_report(number: int, slug: str, title: str, markdown: str, payload: dic
     data.parent.mkdir(parents=True, exist_ok=True)
     data.write_text(json.dumps(payload, default=str, indent=1))
     return doc
+
+
+def decile_returns(obs: pd.DataFrame, feature: str, ret: str, deciles: int = 10) -> pd.DataFrame:
+    """date × decile mean of `ret` (deciles formed within each date)."""
+    f = obs[["date", feature, ret]].dropna()
+    f = f[f.groupby("date")[feature].transform("size") >= deciles * 3]
+    f["decile"] = f.groupby("date")[feature].transform(
+        lambda x: pd.qcut(x.rank(method="first"), deciles, labels=False) + 1)
+    return f.groupby(["date", "decile"])[ret].mean().unstack()
+
+
+def spread(by_date: pd.DataFrame) -> dict:
+    """Top minus bottom bucket, per date, summarized across dates."""
+    s = (by_date[by_date.columns.max()] - by_date[1]).dropna()
+    return summarize(s)

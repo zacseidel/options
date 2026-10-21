@@ -133,6 +133,14 @@ const FEATURE_LABELS = {
   value: ["Value", money], held_by: ["Held by", (v) => (v == null ? "—" : v.toFixed(0))],
   return_1m: ["1M", pct],
   iv_rv: ["IV ÷ RV", (v) => num(v, 2)], rv20: ["Realized vol", (v) => pct(v, 0)],
+  gross_margin_chg: ["Gross margin Δ", (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)} pts`)],
+  op_margin_chg: ["Op margin Δ", (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)} pts`)],
+  ni_ttm_yoy: ["Earnings YoY", (v) => pct(v, 0, true)], rev_yoy_q: ["Revenue YoY", (v) => pct(v, 0, true)],
+  rev_ttm_yoy: ["Revenue YoY (TTM)", (v) => pct(v, 0, true)], fmom: ["Fund. score", (v) => num(v, 2)],
+  rank_12m: ["12M rank", (v) => (v == null ? "—" : v.toFixed(0))],
+  rev_yoy_mean_8q: ["Avg growth (8q)", (v) => pct(v, 0)], rev_up_12q: ["Up quarters (of 12)", (v) => (v == null ? "—" : v.toFixed(0))],
+  fcf_margin: ["FCF margin", (v) => pct(v, 0)], shares_yoy: ["Shares YoY", (v) => pct(v, 1, true)],
+  ps_chg: ["P/S change", (v) => pct(v, 0, true)], ps: ["P/S", (v) => num(v, 1)], buybacks_ttm: ["Buybacks (TTM)", money],
   term: ["IV 30d − long", (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)} pts`)],
 };
 const TEXT_FEATURES = new Set(["dip_date", "members", "top_funds", "last_disclosed"]);

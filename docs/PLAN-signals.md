@@ -100,7 +100,32 @@ grid first, then tracked.
 
 ---
 
-## 5. Fundamentals (Phase 2) — the biggest enabler
+## 5. Fundamentals (Phase 2) — the biggest enabler — built 2026-10-21
+
+**Status.** `fundamental_facts`: 2.35 M XBRL facts for 1,387 companies (88% of the S&P 500, 91% of the
+S&P 400; the rest are foreign / IFRS filers or use other tags). `market.data.fundamental_metrics`
+derives quarters as first filed (YTD differencing, Q4 = FY − 9M or FY − three quarters) and per-filing
+states usable the day after filing. Daily step `fundamentals` re-fetches the day's 10-K / 10-Q filers.
+Research: `docs/research/02-fundamentals.md` (monthly, 2022-10 → 2026-10, in-sample before 2025).
+- Survived: **margin expansion** (gross and operating, both indexes, stronger at 6 months) and
+  **trailing earnings growth** (S&P 500 only).
+- Did not: revenue / EPS acceleration, multiple expansion, share shrinkage; **steady growers reversed**
+  in 2025–26 (top-vs-bottom −3.9% per quarter in the S&P 500).
+
+Lab results from 2022-11-29 (the momentum lists' first date; 2025+ mostly out of sample):
+
+| Strategy | CAGR | Sharpe | Worst | 2025+ | Compare |
+|---|---|---|---|---|---|
+| S&P 400 Emerging Leaders top 5 | 33.9% | 1.08 | −27% | 47.6% | S&P 400 Leaders 31.8% / 0.57 / −46%, 2025+ 24.7% |
+| S&P 400 Fundamental Momentum top 5 | 35.6% | 0.87 | −33% | 60.2% | (from 2021-10, incl. 2022: 16.2% / 0.33 / −54%) |
+| S&P 500 Fundamental Momentum top 5 | 33.6% | 0.67 | −39% | 48.7% | S&P 500 Leaders 60.1% / 0.96; SPY 20.4% |
+| S&P 500 Re-rating top 5 | 30.1% | 0.61 | −35% | 25.2% | |
+| Megacap Laggards, fundamentals filter | 36.5% | 1.19 | −29% | 38.4% | original 41.5% / 1.23 (filter hurt) |
+| Steady Compounders S&P 500 / 400 | −5.2% / 7.0% | | −42% / −58% | | failed |
+
+Lead time: Emerging Leaders' picks later joined the Leaders top 10 18–21% of the time, ~130 days early
+(1% already there) — less often than Fast Rank Momentum (35–37%, ~100 days, 23% already there).
+
 
 **Data.** `companyfacts` once per company (~1,750 CIKs, ~0.5 GB streamed, parsed and discarded); daily, re-fetch
 only companies with a new 10-Q / 10-K / 8-K in EDGAR's daily form index (already scanned for 13Fs).

@@ -9,13 +9,14 @@
   7. corporate actions last 60 days daily; whole window weekly
   8. market caps       any quarter-end anchor not yet stored (+ refresh the latest weekly)
   9. leaders           point-in-time Congress member and 13F fund leaderboards per report date
- 10. option_flow       one-row-per-underlying summary of each new OPRA file (option-flow categories)
- 11. categories        recompute recent report dates; full rebuild when a category's code changed
- 12. options           option bars for the select option set (previous session's OPRA file, plus a
+ 10. fundamentals      EDGAR companyfacts for new companies and the day's 10-K / 10-Q filers
+ 11. option_flow       one-row-per-underlying summary of each new OPRA file (option-flow categories)
+ 12. categories        recompute recent report dates; full rebuild when a category's code changed
+ 13. options           option bars for the select option set (previous session's OPRA file, plus a
                        batched re-stream for names newly entering an option slot)
- 13. evaluation        all strategies, stock and option (derived)
- 14. export            site/data JSON
- 15. publish           (not configured yet)
+ 14. evaluation        all strategies, stock and option (derived)
+ 15. export            site/data JSON
+ 16. publish           (not configured yet)
 
 Usage:  python -m market.ops.run [--full] [--only STEP ...] [--skip STEP ...]
 """
@@ -34,14 +35,15 @@ import pandas as pd
 import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import ROOT
-from market.data import bars, corpactions, market_caps, option_panel, securities, universe_wiki, watchlists
+from market.data import (bars, corpactions, fundamentals, market_caps, option_panel, securities, universe_wiki,
+                         watchlists)
 from market.evaluate import engine
 from market.reports import export, snapshot
 from market.smartmoney import hedge, ingest, pipeline
 from market.store.db import connect
 
 STEPS = ["watchlists", "universes", "disclosures", "bars", "fund_periods", "signals", "corpactions", "market_caps",
-         "leaders", "option_flow", "categories", "options", "evaluation", "export"]
+         "leaders", "fundamentals", "option_flow", "categories", "options", "evaluation", "export"]
 WEEKLY_DAY = 0                      # Monday: refresh slower-moving reference data
 
 
@@ -145,6 +147,11 @@ def step_categories(full: bool) -> dict:
         start = pd.Timestamp(last).date() - timedelta(days=7)
         out["updated"] = snapshot.build(start, None, fresh)
     return {"rebuilt": stale, "updated": fresh, "seconds": sum(v.get("_seconds", 0) for v in out.values())}
+
+
+def step_fundamentals(full: bool) -> dict:
+    """EDGAR companyfacts for companies never fetched and for the day's 10-K / 10-Q filers."""
+    return fundamentals.sync()
 
 
 def step_option_flow(full: bool) -> dict:

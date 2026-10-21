@@ -11,14 +11,14 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 51 tests
+.venv/bin/python -m pytest -q                   # 55 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
 
 ## Pipeline steps (`src/market/ops/run.py`)
 watchlists → universes (weekly) → disclosures → bars → fund_periods → signals →
-corpactions → market_caps → leaders → option_flow → categories → options → evaluation → export
+corpactions → market_caps → leaders → fundamentals → option_flow → categories → options → evaluation → export
 
 New this session (bold):
 - **disclosures** (`market.smartmoney.ingest`): runs smartmoney's own `fetch_house` / `fetch_senate`
@@ -128,7 +128,11 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   Re-run `python -m market.research.option_flow` (~20 s) after changing features.
 - Caveat: a category's `version` hashes only its own function, so editing a shared helper
   (e.g. `iv_warnings`) does not trigger a rebuild — run `python -m market.reports.snapshot --category …`.
-- Next: Phase 2 (EDGAR fundamentals).
+- **Phase 2 (done):** EDGAR fundamentals — see PLAN-signals §5. 12 Lab categories, 14 Lab strategies.
+  `python -m market.data.fundamentals --refresh-all` re-fetches every company (~3 min);
+  `python -m market.research.fundamentals` (~1 min). A full rebuild of the fundamental categories takes
+  ~7 min (`python -m market.reports.snapshot --category fmom_sp500 …`).
+- Next: Phase 3 (earnings events + post-earnings drift; reuses the fundamentals for the surprise).
 
 ## Fixed 2026-10-21 (scheduled-run bugs)
 - The 17:30 run failed every weekday on `options`: before a session's OPRA file is published the
