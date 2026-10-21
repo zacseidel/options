@@ -90,16 +90,12 @@ IV ÷ 20-day realized vol; skew level and change; term slope. First year picks, 
 `optflow_skew_sp900` (puts getting cheaper vs calls), plus bearish mirrors for §10.
 Hold ▸ DEFAULT `fixed_hold` 21 sessions, stacked, plus a `while_listed` variant.
 
-## 4. Implied-volatility method choice (Phase 5, after Phase 1) — built 2026-10-21
+## 4. Implied-volatility method choice (Phase 5, after Phase 1) — tried and dropped 2026-10-21
 
-**Status.** `instrument: adaptive` (`market.methods.adaptive`) picks one of the base's own tracked methods
-per window from the IV reading on the selection day. `docs/research/05-adaptive-options.md` scored 21 rules
-(raw IV ÷ RV thresholds and cross-sectional percentiles) on year 1, checked on year 2, choosing ONE rule for
-all bases: IV ÷ RV in the top fifth → Defensive, bottom fifth → Aggressive, else Balanced (switches ~30% of
-windows). **It did not beat Balanced**: lower in-sample Sharpe on all four bases; year 2 mixed (Megacap
-Leaders and Rank Momentum slightly better, S&P 500 Leaders worse). Kept as a Lab fourth tier on each base
-(Lab page; the Options page keeps its three tiers). Full window: Sharpe 1.26 vs Balanced 1.40 (S&P 500
-Leaders), 1.30 vs 1.43 (Rank Momentum), 0.78 vs 0.80 (Megacap), 1.34 vs 1.44 (Laggards).
+**Outcome.** An Adaptive tier (per window: the base's Defensive method when implied ÷ realized vol was in
+the top fifth of liquid names, Aggressive in the bottom fifth, else Balanced) had a lower Sharpe than the
+plain Balanced tier on all four bases (`docs/research/05-adaptive-options.md`). Removed from the code
+at the user's request (no benefit); the report stays as the record. Original plan below.
 
 
 Add a fourth tier, **Adaptive**, to each option base (the three current tiers don't change). On each
@@ -181,18 +177,13 @@ volatility of that change over the last 8 quarters). ~5 y × 900 names ≈ 18 k 
 **Categories:** `pead_up` (top decile reaction + positive surprise + gap held), hold `fixed_hold` 42 and 63
 sessions; `pead_down` mirror for §10. Research: `research/03-pead.md`.
 
-## 7. Insider buying (Phase 4, after Phase 2) — built 2026-10-21
+## 7. Insider buying (Phase 4, after Phase 2) — tried and dropped 2026-10-21
 
-**Status.** `insider_trades`: Form 4 open-market purchases (code P) — SEC quarterly data sets 2021 Q1 →
-2026 Q1 (138 k purchases, all issuers) plus parsed Form 4 XML for tracked companies since (backfill paced at
-~6 requests/s; the SEC blocks faster clients). Daily step `insiders`. Events (`market.data.insider_signals`):
-officers / directors, ≥ $10k, dated the filing session. Research `docs/research/04-insiders.md`, measured vs
-the average S&P 500 / 400 stock: **little signal in these large companies** — slightly positive before
-2025, negative in 2025–26 (clusters −3.3% over 63 sessions out of sample). **Quality vs turnaround did not
-separate**; turnaround clusters did slightly better. Lab categories: Insider Clusters, Clusters–Quality,
-Clusters–Turnaround, C-Suite Buys (hold 63 sessions, one lot per event). Since 2021-10: C-suite 9.1% CAGR,
-clusters 4.4%, turnaround 4.7%, quality 0.6%; SPY 12.6%. Insider buying is known to work best in small
-companies, outside the S&P 900 — extending the `signals` universe to insider-bought names is the open follow-up.
+**Outcome.** Form 4 purchases 2021 → 2026 (SEC quarterly data sets + parsed filings) at S&P 500 / 400
+companies showed little signal vs the average member (slightly positive before 2025, negative after);
+quality vs turnaround (fundamentals) did not separate; all four Lab lists trailed SPY
+(`docs/research/04-insiders.md`). Removed — code, daily step and the 138 k-row table — at the user's
+request (lots of data, no benefit). Untested: small companies outside the S&P 900. Original plan below.
 
 
 **Data.** Form 4 open-market purchases (code P, acquired) into `insider_trades`: backfill 5 y from the SEC's
@@ -261,7 +252,8 @@ does a second family add to the first family's result?
 | 8 | Short instrument + decliners + hedged pairs | 2 (and 1, 3, 7 for inputs) | — | — |
 | 9 | Convergence | all | — | — |
 
-Phases 1 and 2 are independent and can be built in parallel. Daily run cost after all phases: a few
+Phases 1 and 2 are independent and can be built in parallel. **Rule from 2026-10-21 (user): research
+first; build Lab categories only for ideas that show a benefit — no Lab entries just to keep a record.** Daily run cost after all phases: a few
 hundred extra EDGAR / Polygon calls and no extra downloads; disk ~90 MB more (72 GB free).
 
 **Open questions**

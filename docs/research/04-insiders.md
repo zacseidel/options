@@ -1,5 +1,7 @@
 # Insider buying → forward returns
 
+> **Dropped 2026-10-21** (no benefit). The code that produced this report was removed; this is the record.
+
 _Generated 2026-10-21 by `python -m market.research.insiders`._
 
 3,512 insider purchase days at S&P 500 / 400 members, 2021-10-18 → 2026-04-08 (739 companies); in-sample before 2025-01-01. Fundamental Momentum known for 70% of events.

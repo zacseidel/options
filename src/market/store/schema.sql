@@ -321,30 +321,3 @@ CREATE TABLE IF NOT EXISTS earnings_events (
     accepted      TIMESTAMP NOT NULL,      -- US/Eastern, naive
     items         VARCHAR NOT NULL
 );
-
--- ------------------------------------------------------------------ insider purchases (PLAN-signals §7)
--- Open-market purchases (Form 4, non-derivative, code P, acquired) by any reporting owner of any issuer.
--- source: 'dataset' = SEC quarterly insider data sets; 'xml' = parsed from the filing (recent days).
-CREATE TABLE IF NOT EXISTS insider_trades (
-    accn          VARCHAR NOT NULL,
-    seq           INTEGER NOT NULL,        -- transaction number within the filing
-    issuer_cik    BIGINT NOT NULL,
-    issuer_name   VARCHAR,
-    ticker        VARCHAR,
-    owner_cik     BIGINT,
-    owner_name    VARCHAR,
-    is_director   BOOLEAN,
-    is_officer    BOOLEAN,
-    is_ten_pct    BOOLEAN,
-    officer_title VARCHAR,
-    trans_date    DATE NOT NULL,
-    filed         DATE NOT NULL,
-    shares        DOUBLE,
-    price         DOUBLE,
-    value         DOUBLE,
-    shares_after  DOUBLE,
-    direct        VARCHAR,                 -- 'D' direct | 'I' indirect
-    plan_10b5_1   BOOLEAN,
-    source        VARCHAR NOT NULL,
-    PRIMARY KEY (accn, seq)
-);

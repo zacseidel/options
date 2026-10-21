@@ -1,5 +1,7 @@
 # Adaptive option tier
 
+> **Dropped 2026-10-21** (no benefit). The code that produced this report was removed; this is the record.
+
 _Generated 2026-10-21 by `python -m market.research.adaptive_options`._
 
 Options history 2024-10-09 → 2026-10-20; in-sample before 2025-10-15. Rich → the base's Defensive method, cheap → Aggressive, otherwise → Balanced.

@@ -11,14 +11,14 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 64 tests
+.venv/bin/python -m pytest -q                   # 58 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
 
 ## Pipeline steps (`src/market/ops/run.py`)
 watchlists → universes (weekly) → disclosures → bars → fund_periods → signals →
-corpactions → market_caps → leaders → fundamentals → earnings → insiders → option_flow → categories → options → evaluation → export
+corpactions → market_caps → leaders → fundamentals → earnings → option_flow → categories → options → evaluation → export
 
 New this session (bold):
 - **disclosures** (`market.smartmoney.ingest`): runs smartmoney's own `fetch_house` / `fetch_senate`
@@ -134,11 +134,10 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   ~7 min (`python -m market.reports.snapshot --category fmom_sp500 …`).
 - **Phase 3 (done):** earnings events — see PLAN-signals §6. No drift found; 2 Lab categories kept.
   `python -m market.research.earnings` (~1 min).
-- **Phase 4 (done):** insider buying — see PLAN-signals §7. 4 Lab categories. `python -m market.data.insiders`
-  (SEC data sets + paced Form 4 XML; ~1 min per day of filings), `python -m market.research.insiders`.
-- **Phase 5 (done):** Adaptive option tier — see PLAN-signals §4. `python -m market.research.adaptive_options`.
-- Next: Phase 6 (corporate actions), 7 (short interest), 8 (shorts), 9 (convergence). Open question for the
-  user: add small companies with insider buying to the `signals` universe.
+- **Phases 4 and 5 tried and dropped (user, 2026-10-21):** insider buying and the Adaptive option tier
+  showed no benefit; code, data and strategies removed; reports kept (`docs/research/04`, `05`).
+- **Working rule now:** research first; add Lab categories only for ideas that show a benefit.
+- Next: Phase 6 (corporate actions), 7 (short interest), 8 (shorts), 9 (convergence).
 
 ## Fixed 2026-10-21 (scheduled-run bugs)
 - The 17:30 run failed every weekday on `options`: before a session's OPRA file is published the
