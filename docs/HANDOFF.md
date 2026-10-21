@@ -1,6 +1,9 @@
 # Handoff — where things stand (2026-10-21)
 
-Read this first, then `docs/PLAN.md` (Status table at the top) for the full design.
+Read this first, then `docs/PLAN.md` (Status table at the top) for the full design, and
+`docs/PLAN-signals.md` for the new signal families being built (2026-10-21: options flow, EDGAR
+fundamentals, post-earnings drift, insiders, IV-adaptive options, corporate actions, short interest, shorts,
+convergence — all as new Lab strategies; nothing existing changes).
 
 ## Run it
 ```
