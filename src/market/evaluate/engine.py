@@ -174,6 +174,7 @@ def build_nav(trades: list[Trade], panel: Panel, mult: pd.DataFrame, start: pd.T
         if t.exit_session is not None:
             exits.setdefault(t.exit_session, []).append(i)
     marks = panel.close.ffill(limit=STALE_DAYS)
+    mult = mult.ffill(limit=STALE_DAYS)          # a one-day data gap leaves the dividend factor blank too
     out = {}
     for basis in ("price", "total"):
         cash, shares, active = 100.0, {}, set()
@@ -191,7 +192,12 @@ def build_nav(trades: list[Trade], panel: Panel, mult: pd.DataFrame, start: pd.T
                         active.discard(i)
                 active |= set(entries.get(s, []))
                 if active:
-                    exec_px = {i: px(trades[i].security_id, fill_price(panel, s, trades[i].security_id)) for i in active}
+                    # A held name with no bar on a rebalance day (a data gap or halt) is re-weighted at its last close.
+                    exec_px = {}
+                    for i in active:
+                        sid = trades[i].security_id
+                        raw = fill_price(panel, s, sid)
+                        exec_px[i] = px(sid, raw if pd.notna(raw) else marks.at[s, sid])
                     value = cash + sum(shares.get(i, 0.0) * exec_px[i] for i in active)
                     target = value / len(active)
                     shares = {i: target / exec_px[i] for i in active}

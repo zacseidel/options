@@ -127,7 +127,7 @@ Lab results from 2022-11-29 (the momentum lists' first date; 2025+ mostly out of
 | S&P 500 Fundamental Momentum top 5 | 33.6% | 0.67 | −39% | 48.7% | S&P 500 Leaders 60.1% / 0.96; SPY 20.4% |
 | S&P 500 Re-rating top 5 | 30.1% | 0.61 | −35% | 25.2% | |
 | Megacap Laggards, fundamentals filter | 36.5% | 1.19 | −29% | 38.4% | original 41.5% / 1.23 (filter hurt) |
-| Steady Compounders S&P 500 / 400 | −5.2% / 7.0% | | −42% / −58% | | failed |
+| Steady Compounders S&P 500 / 400 | −5.2% / 7.0% | | −42% / −58% | | failed — dropped |
 
 Lead time: Emerging Leaders' picks later joined the Leaders top 10 18–21% of the time, ~130 days early
 (1% already there) — less often than Fast Rank Momentum (35–37%, ~100 days, 23% already there).
@@ -155,6 +155,15 @@ flow, capex, buybacks, dividends paid, shares outstanding and diluted weighted s
 
 Compounders get slower hold rules ▸ DEFAULT: monthly rebalance `while_listed` top 10 and `fixed_hold` 126
 sessions. S&P 400 gets its own research pass, since its momentum runs are shorter.
+
+**Pruned 2026-10-21 (user, after the overview):** dropped Steady Compounders (both), S&P 400 Re-rating,
+S&P 400 Share Shrinkers, and the fundamentals filter on Megacap Laggards and Munger Dip. Kept S&P 500
+Re-rating and S&P 500 Share Shrinkers (beat SPY by ~2.7 points a year at the same Sharpe).
+
+**Steady Leaders (added 2026-10-21, user's idea):** among S&P 500 ranks 6–50 by 12-month return, buy the 5
+that spent the most of the last 26 weeks in the top 50 (`docs/research/07-steady-leaders.md`). Smoothness
+measures (frog-in-the-pan, straight-line trend, up weeks) did not help; longevity did. From 2023-04: 49% a
+year, Sharpe 0.96, vs 30% / 0.62 for the Leaders' ranks 6–10 (Leaders' top 5: 69% / 1.05).
 
 ## 6. Post-earnings drift (Phase 3, after Phase 2) — built 2026-10-21
 

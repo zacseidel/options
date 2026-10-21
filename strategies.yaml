@@ -72,26 +72,10 @@ strategies:
   - {id: fmom_sp400.next5, category: fmom_sp400, slot: [6, 10], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: emerging_sp500.top5, category: emerging_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: emerging_sp400.top5, category: emerging_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: compounders_sp500.top5, category: compounders_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: compounders_sp400.top5, category: compounders_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: rerating_sp500.top5, category: rerating_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: rerating_sp400.top5, category: rerating_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: shrinkers_sp500.top5, category: shrinkers_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: shrinkers_sp400.top5, category: shrinkers_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - id: laggards_mega10_fq.top2.hold21
-    category: laggards_mega10_fq
-    slot: [1, 2]
-    hold: fixed_hold
-    params: {sessions: 21}
-    stage: lab
-    added: 2026-10-21
-  - id: munger_top50_fq.all.ema21
-    category: munger_top50_fq
-    slot: all
-    hold: price_exit
-    params: {indicator: ema, window: 21, exit_when: below}
-    stage: lab
-    added: 2026-10-21
+  # Steady Leaders (docs/research/07-steady-leaders.md).
+  - {id: steady_sp500.top5,  category: steady_sp500,  slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
   # Earnings reactions (docs/research/03-earnings.md): one lot per announcement, held 42 sessions.
   - {id: pead_up_sp900.all.hold42,   category: pead_up_sp900,   slot: all, hold: fixed_hold, params: {sessions: 42}, stage: lab, added: 2026-10-21}
   - {id: pead_down_sp900.all.hold42, category: pead_down_sp900, slot: all, hold: fixed_hold, params: {sessions: 42}, stage: lab, added: 2026-10-21}

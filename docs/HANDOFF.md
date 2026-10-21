@@ -140,6 +140,10 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
 - **Phase 6 (done):** corporate actions — PLAN-signals §8; Lab category Dividend Raisers (`divraise_sp900`). Dividends now carry their
   declaration date and frequency (`market.data.dividend_signals` builds raise / cut / initiation events).
   `python -m market.research.corporate_actions` (~5 min).
+- **Pruned + Steady Leaders (2026-10-21):** see PLAN-signals §5 notes. Lab now: option-flow lists, Fundamental
+  Momentum / Emerging Leaders (500, 400), S&P 500 Re-rating and Share Shrinkers, earnings-reaction pair,
+  Dividend Raisers, S&P 500 Steady Leaders. Engine: a held name with a one-day data gap is re-weighted at its
+  last close (Biogen 2023-06-09 broke a NAV).
 - Next: Phase 7 (short interest), 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
   clear decliners as candidates), 9 (convergence).
 
