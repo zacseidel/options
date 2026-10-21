@@ -126,6 +126,12 @@ def _company_states(g: pd.DataFrame) -> pd.DataFrame:
     out["eps_yoy_q"] = _growth(eps, eps.shift(4)).where(year)
     out["eps_accel"] = out["eps_yoy_q"] - out["eps_yoy_q"].shift(1)
     out["eps_ttm"] = out["net_income_ttm"] / g["diluted_shares"]
+    # Standardized unexpected earnings / revenue (seasonal random walk): the change vs the same quarter
+    # a year earlier, divided by the volatility of that change over the previous 8 quarters.
+    eps_diff = (eps - eps.shift(4)).where(year)
+    out["sue"] = eps_diff / eps_diff.shift(1).rolling(8, min_periods=4).std()
+    rev_diff = (g["revenue"] - g["revenue"].shift(4)).where(year)
+    out["rev_sue"] = rev_diff / rev_diff.shift(1).rolling(8, min_periods=4).std()
     out["gross_margin"] = out["gross_profit_ttm"] / out["revenue_ttm"]
     out["op_margin"] = out["operating_income_ttm"] / out["revenue_ttm"]
     out["fcf_margin"] = out["fcf_ttm"] / out["revenue_ttm"]

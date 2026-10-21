@@ -150,7 +150,17 @@ flow, capex, buybacks, dividends paid, shares outstanding and diluted weighted s
 Compounders get slower hold rules ▸ DEFAULT: monthly rebalance `while_listed` top 10 and `fixed_hold` 126
 sessions. S&P 400 gets its own research pass, since its momentum runs are shorter.
 
-## 6. Post-earnings drift (Phase 3, after Phase 2)
+## 6. Post-earnings drift (Phase 3, after Phase 2) — built 2026-10-21
+
+**Status.** `earnings_events`: 31.6 k 8-K item 2.02 releases (1,382 companies, 2021 →) from EDGAR
+submissions; daily step `earnings` re-reads the day's 8-K filers. EDGAR's JSON acceptance time is true UTC
+for some filers and shifted 4–5 h late for others (Apple): after-close releases are corrected with the
+17:30 filing-date rule; shifted pre-market ones stay a few hours late but react in the same session.
+Fundamentals gained `sue` / `rev_sue` (seasonal random walk). Research `docs/research/03-earnings.md`
+(17.9 k S&P 500 / 400 announcements): **no post-earnings drift** — no reaction or surprise feature survived;
+big up-moves slightly reverse, big down-moves drifted lower before 2025 and bounced after. Kept as a Lab
+pair to build a live record: `pead_up_sp900` 6.5% CAGR, `pead_down_sp900` 4.2%, SPY 12.2% (2021-11 →).
+
 
 **Events.** Earnings timestamps from 8-K item 2.02 acceptance times (`submissions`, one call per company,
 then the daily index). Per event: earnings-announcement return (day 0 to +1 abnormal return vs SPY),

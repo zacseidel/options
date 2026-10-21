@@ -64,6 +64,8 @@ KEY_FEATURES = {
     "shrinkers_sp400": ["shares_yoy", "buybacks_ttm", "fcf_margin"],
     "laggards_mega10_fq": ["return_3m", "return_6m", "return_12m", "avg_rank"],
     "munger_top50_fq": ["pct_vs_sma200", "dip_date", "market_cap"],
+    "pead_up_sp900": ["ear", "gap", "vol_ratio"],
+    "pead_down_sp900": ["ear", "gap", "vol_ratio"],
 }
 HOLD_LABELS = {
     "while_listed": "hold while listed",

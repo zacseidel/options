@@ -310,3 +310,14 @@ CREATE TABLE IF NOT EXISTS fundamental_facts (
     filed         DATE NOT NULL,
     accn          VARCHAR NOT NULL
 );
+
+-- ------------------------------------------------------------------ earnings events (PLAN-signals §6)
+-- 8-K filings with item 2.02 (results of operations) from EDGAR submissions. `accepted` is EDGAR's
+-- acceptance time in US/Eastern; it decides whether the market first reacts that session or the next.
+CREATE TABLE IF NOT EXISTS earnings_events (
+    cik           BIGINT NOT NULL,
+    accn          VARCHAR PRIMARY KEY,
+    filed         DATE NOT NULL,
+    accepted      TIMESTAMP NOT NULL,      -- US/Eastern, naive
+    items         VARCHAR NOT NULL
+);

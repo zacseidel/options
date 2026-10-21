@@ -141,6 +141,8 @@ const FEATURE_LABELS = {
   rev_yoy_mean_8q: ["Avg growth (8q)", (v) => pct(v, 0)], rev_up_12q: ["Up quarters (of 12)", (v) => (v == null ? "—" : v.toFixed(0))],
   fcf_margin: ["FCF margin", (v) => pct(v, 0)], shares_yoy: ["Shares YoY", (v) => pct(v, 1, true)],
   ps_chg: ["P/S change", (v) => pct(v, 0, true)], ps: ["P/S", (v) => num(v, 1)], buybacks_ttm: ["Buybacks (TTM)", money],
+  ear: ["Reaction vs SPY", (v) => pct(v, 1, true)], gap: ["Gap", (v) => pct(v, 1, true)],
+  vol_ratio: ["Volume ×", (v) => (v == null ? "—" : `${v.toFixed(1)}×`)],
   term: ["IV 30d − long", (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)} pts`)],
 };
 const TEXT_FEATURES = new Set(["dip_date", "members", "top_funds", "last_disclosed"]);
