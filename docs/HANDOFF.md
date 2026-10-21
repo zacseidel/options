@@ -166,6 +166,7 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   password goes in `.env` (and in a secret too only if the build moves to Actions).
 - New Lab strategy **S&P 400 Improving Fundamentals & Rank** (`emergingall_sp400`): Emerging Leaders without
   the top-25 exclusion — 42% a year, Sharpe 1.21 from 2022-11 (Emerging 34%, 1.08), 77% overlap with Emerging.
+  It replaces Emerging Leaders in the feed; Emerging Leaders stays in the Lab.
 - The evening run now also computes the next report when tonight's close is its as-of session (Mon → Tue,
   Thu → Fri), so the site and newsfeed show actions before the open (`snapshot.upcoming_report`).
 - Next: trading-cost assumption in the evaluation; efficiency items; publishing., 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and

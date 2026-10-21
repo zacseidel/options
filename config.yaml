@@ -87,6 +87,5 @@ newsfeed:
     - {strategy: mom12si_sp500.top5, base: mom12_sp500, filter: short_interest}
     - {strategy: rankmomiv_sp500.top5, base: rankmom_sp500, filter: iv}
     - {strategy: laggards_mega10.top2.hold21}
-    - {strategy: emerging_sp400.top5}
-    - {strategy: emergingall_sp400.top5}
+    - {strategy: emergingall_sp400.top5}   # S&P 400 Emerging Leaders stays in the Lab, not in the feed
     - {strategy: steady_sp500.top5}
