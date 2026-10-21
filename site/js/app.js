@@ -1140,6 +1140,7 @@ async function newsPage(root) {
 }
 
 const ACTION_CLASS = { Buy: "new", Add: "up", Trim: "down", Sell: "down", Hold: "flat" };
+const STATUS = { held: ["Held", "up"], filtered: ["Filtered out", "down"], next: ["Next in line", "flat"] };
 
 function resultText(r) {
   if (!r) return "";
@@ -1148,47 +1149,82 @@ function resultText(r) {
 }
 
 function renderNews(root, d) {
-  root.appendChild(h("p", { class: "muted small" }, `Data through ${fmtDate(d.data_through)} · generated ${d.generated_at.replace("T", " ")}`));
-  root.appendChild(h("h2", {}, "Strategies followed"));
-  root.appendChild(table([
-    { key: "name", label: "Strategy", sort: (r) => r.name, render: (r) => h("a", { href: `#/strategy/${r.id}` }, r.name), cls: () => "name-col" },
-    { key: "slot", label: "Takes", nosort: true, render: (r) => r.slot === "all" ? "every listing" : r.slot },
-    { key: "hold", label: "Hold", nosort: true, render: (r) => r.hold === "fixed_hold" ? `${r.sessions} sessions per listing` : "while listed" },
-    { key: "weight", label: "Share of portfolio", num: true, sort: (r) => r.weight, render: (r) => pct(r.weight, 0) },
-    { key: "stage", label: "", nosort: true, render: (r) => r.stage === "lab" ? h("span", { class: "badge new" }, "Lab") : "" },
-  ], d.portfolio, { sortKey: "weight", compact: true }));
+  const p = (t) => h("p", { class: "ink2", style: "margin:4px 0" }, t);
+  root.appendChild(h("p", { class: "muted small" }, `Latest report ${fmtDate(d.latest_report)} · data through ${fmtDate(d.data_through)} · generated ${d.generated_at.replace("T", " ")}`));
+  root.appendChild(h("div", { class: "card", style: "margin-bottom:14px" }, h("h3", {}, "How this works"),
+    p("Lists: each candidate list is followed only while its Sharpe ratio since it started beats SPY's over the same dates, re-checked every run."),
+    p("Sizing: each held stock gets its list's half-Kelly — 0.5 × (win rate − loss rate ÷ payoff ratio), from the list's closed trades. " +
+      "A stock on several lists appears on each and is sized once, at the lowest of their half-Kellys. If the sizes add up to more than 100% " +
+      `they are scaled down proportionally to fit; if less, the rest stays in SPY. No stock above ${pct(d.cap, 0)}.`),
+    p("Filtered lists are shown with their full base list, marking the names the filter skips and why. Each name shows when it joined the list (its current unbroken stretch) and its gain since.")));
 
+  root.appendChild(h("h2", {}, "Lists considered"));
+  root.appendChild(table([
+    { key: "name", label: "List", sort: (r) => r.name, cls: () => "name-col", render: (r) => h("span", {}, h("a", { href: `#/strategy/${r.id}` }, r.name), r.filter ? h("span", { class: "muted small" }, ` (${r.base_name} + filter)`) : "") },
+    { key: "included", label: "In the feed", sort: (r) => (r.included ? 1 : 0), render: (r) => h("span", { title: r.reason, class: `badge ${r.included ? "up" : "down"}` }, r.included ? "Included" : "Excluded") },
+    { key: "sharpe", label: "Sharpe", num: true, sort: (r) => r.metrics.sharpe, render: (r) => num(r.metrics.sharpe) },
+    { key: "spy", label: "SPY Sharpe, same dates", num: true, sort: (r) => r.spy_sharpe, render: (r) => num(r.spy_sharpe) },
+    { key: "cagr", label: "CAGR", num: true, sort: (r) => r.metrics.cagr, cls: (r) => cls(r.metrics.cagr), render: (r) => pct(r.metrics.cagr) },
+    { key: "dd", label: "Worst drop", num: true, sort: (r) => r.metrics.max_drawdown, render: (r) => pct(r.metrics.max_drawdown, 0) },
+    { key: "hk", label: "Half-Kelly", num: true, sort: (r) => r.metrics.half_kelly, render: (r) => pct(r.metrics.half_kelly, 1) },
+    { key: "win", label: "Win rate · payoff", num: true, sort: (r) => r.metrics.win_rate, render: (r) => `${pct(r.metrics.win_rate, 0)} · ${num(r.metrics.payoff_ratio)}` },
+    { key: "n", label: "Trades", num: true, sort: (r) => r.metrics.closed_trades, render: (r) => r.metrics.closed_trades },
+    { key: "start", label: "Since", sort: (r) => r.metrics.start, render: (r) => fmtDate(r.metrics.start) },
+  ], d.candidates, { sortKey: "sharpe", compact: true }));
+  root.appendChild(h("p", { class: "muted small" }, d.candidates.map((c) => `${c.name}: ${c.reason}.`).join(" ")));
+
+  const a = d.allocation;
+  root.appendChild(h("h2", {}, `Allocation after the ${fmtDate(d.latest_report)} report`));
+  root.appendChild(h("p", { class: "ink2" }, a.scale < 1
+    ? `The lists' half-Kellys add up to ${pct(a.total_raw, 0)} of the portfolio, so every position is scaled by ${num(a.scale)} to fit 100%.`
+    : `The lists' half-Kellys add up to ${pct(a.total_raw, 0)}, so they are used as they are.`));
+  const rows = [...a.rows, ...(a.spy > 0.0005 ? [{ key: "SPY", spy: true, weight: a.spy, lists: [], explain: "" }] : [])];
+  root.appendChild(table([
+    { key: "key", label: "Stock", sort: (r) => r.key, render: (r) => r.spy ? h("b", {}, "SPY (unallocated)") : h("span", {}, stockLink(r.key), h("span", { class: "muted small" }, r.name ? ` ${r.name.slice(0, 28)}` : "")) },
+    { key: "weight", label: "Weight", num: true, sort: (r) => r.weight, render: (r) => pct(r.weight, 1) },
+    { key: "lists", label: "On lists", nosort: true, render: (r) => r.spy ? "" : h("span", {}, r.lists.join(", "), r.duplicate ? h("span", { class: "badge new", style: "margin-left:6px" }, `on ${r.lists.length} lists`) : "") },
+    { key: "explain", label: "How it's sized", nosort: true, render: (r) => r.spy
+        ? `The lists' half-Kellys add up to ${pct(a.total_raw, 0)}; the remaining ${pct(a.spy, 1)} is held in SPY rather than left in cash.` : r.explain },
+  ], rows, { sortKey: "weight", compact: true }));
+  if (a.spy <= 0.0005) root.appendChild(h("p", { class: "muted small" }, "Nothing is left over for SPY this time: the positions use the whole portfolio."));
+
+  root.appendChild(h("h2", {}, "The lists today"));
+  const grid = h("div", { class: "grid cols-2" });
+  root.appendChild(grid);
+  for (const L of d.lists) {
+    grid.appendChild(h("div", { class: "card" },
+      h("h3", {}, h("a", { href: `#/strategy/${L.id}` }, L.name), h("span", { class: "muted small" }, `half-Kelly ${pct(L.half_kelly, 1)}`)),
+      L.filter ? h("p", { class: "muted small", style: "margin:0 0 6px" }, `Shown with its full base list (${L.shown}); names the ${L.filter} skips are marked.`) : null,
+      table([
+        { key: "rank", label: "#", num: true, sort: (r) => r.rank ?? 99, render: (r) => r.rank ?? "—" },
+        { key: "key", label: "Stock", sort: (r) => r.key, render: (r) => h("span", {}, stockLink(r.key), r.also_on.length ? h("span", { class: "badge new", style: "margin-left:4px", title: `Also on ${r.also_on.join(", ")}` }, `+${r.also_on.length}`) : "") },
+        { key: "status", label: "Status", sort: (r) => r.status, render: (r) => h("span", { class: `badge ${STATUS[r.status][1]}`, title: r.reason || "" }, STATUS[r.status][0]) },
+        { key: "added", label: "On list since", sort: (r) => r.added, cls: () => "nowrap", render: (r) => (r.added ? `${fmtDate(r.added)} (${r.days ?? 0}d)` : "—") },
+        { key: "gain", label: "Gain since", num: true, sort: (r) => r.gain, cls: (r) => cls(r.gain), render: (r) => pct(r.gain, 1, true) },
+        { key: "weight", label: "Weight", num: true, sort: (r) => r.weight, render: (r) => (r.weight == null ? "" : pct(r.weight, 1)) },
+        { key: "why", label: "Note", nosort: true, render: (r) => h("span", { class: "small" }, r.reason || r.feature) },
+      ], L.rows, { sortKey: "rank", desc: false, compact: true })));
+  }
+
+  root.appendChild(h("h2", {}, "Report history"));
   for (const rep of d.reports) {
-    const big = rep.actions.filter((a) => Math.max(a.before, a.after) >= 0.01);
-    const small = rep.actions.filter((a) => Math.max(a.before, a.after) < 0.01);
     const when = rep.upcoming ? h("span", { class: "badge new" }, `for the open on ${fmtDate(rep.date)}`)
       : rep.filled ? h("span", { class: "muted small" }, `filled at the open on ${fmtDate(rep.date)}`) : h("span", { class: "badge flat" }, "pending");
-    const counts = ["Buy", "Add", "Trim", "Sell"].map((k) => [k, rep.actions.filter((a) => a.action === k).length]).filter(([, n]) => n);
+    const counts = ["Buy", "Add", "Trim", "Sell"].map((k) => [k, rep.actions.filter((x) => x.action === k).length]).filter(([, n]) => n);
     const card = h("div", { class: "card news-report" },
       h("h3", {}, `Report · ${fmtDate(rep.date)}`, when, h("span", { class: "muted small" },
-        `${counts.map(([k, n]) => `${n} ${k.toLowerCase()}`).join(" · ") || "no changes"} · ${rep.holding.length} positions after · prices as of ${fmtDate(rep.as_of)}`)));
-    const actionTable = (rows) => table([
+        `${counts.map(([k, n]) => `${n} ${k.toLowerCase()}`).join(" · ") || "no changes"} · ${rep.positions} positions after${rep.spy > 0.0005 ? ` + ${pct(rep.spy, 0)} SPY` : ""} · prices as of ${fmtDate(rep.as_of)}`)));
+    card.appendChild(rep.actions.length ? table([
       { key: "action", label: "Action", sort: (r) => ["Buy", "Add", "Trim", "Sell", "Hold"].indexOf(r.action), render: (r) => h("span", { class: `badge ${ACTION_CLASS[r.action]}` }, r.action) },
       { key: "key", label: "Stock", sort: (r) => r.key, render: (r) => h("span", {}, stockLink(r.key), h("span", { class: "muted small" }, r.name ? ` ${r.name.slice(0, 28)}` : "")) },
       { key: "after", label: "Weight", num: true, sort: (r) => r.after, cls: () => "nowrap", render: (r) => `${pct(r.before, 1)} → ${pct(r.after, 1)}` },
       { key: "why", label: "Why", nosort: true, render: (r) => h("ul", { class: "reasons" },
           r.in.map((x) => h("li", {}, h("span", { class: "plus" }, "+ "), x.why)),
-          r.out.map((x) => h("li", {}, h("span", { class: "minus" }, "− "), x.why, h("span", { class: "muted" }, resultText(x.result))))) },
-    ], rows, { sortKey: "action", desc: false, compact: true });
-    if (big.length) card.appendChild(actionTable(big));
-    else card.appendChild(h("p", { class: "muted small" }, "No changes of 1% or more."));
-    if (small.length) card.appendChild(h("details", { class: "small-moves" }, h("summary", {}, `${small.length} small positions (under 1%)`), actionTable(small)));
+          r.out.map((x) => h("li", {}, h("span", { class: "minus" }, "− "), x.why, h("span", { class: "muted" }, resultText(x.result)))),
+          r.note ? h("li", { class: "muted" }, r.note) : null) },
+    ], rep.actions, { sortKey: "action", desc: false, compact: true }) : h("p", { class: "muted small" }, "No changes."));
     root.appendChild(card);
   }
-
-  root.appendChild(h("h2", {}, `Positions after the latest report (${d.current.length})`));
-  root.appendChild(table([
-    { key: "key", label: "Stock", sort: (r) => r.key, render: (r) => stockLink(r.key) },
-    { key: "weight", label: "Weight", num: true, sort: (r) => r.weight, render: (r) => pct(r.weight, 1) },
-    { key: "strategies", label: "Held by", nosort: true, render: (r) => r.strategies.join(", ") },
-    { key: "since", label: "Since", sort: (r) => r.since, render: (r) => (r.since ? fmtDate(r.since) : "—") },
-    { key: "return", label: "Return so far", num: true, sort: (r) => r.return, cls: (r) => cls(r.return), render: (r) => pct(r.return, 1, true) },
-  ], d.current, { sortKey: "weight", compact: true }));
 }
 
 // ------------------------------------------------------------------ shell

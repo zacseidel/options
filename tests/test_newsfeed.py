@@ -48,3 +48,18 @@ def test_upcoming_report_is_the_next_session_when_it_is_a_report_day():
         panel = SimpleNamespace(sessions=pd.bdate_range("2026-10-01", last))
         got = upcoming_report(panel)
         assert (str(got) if got else None) == expected
+
+
+def test_allocation_lowest_kelly_scaling_cap_and_spy():
+    from market.reports.export_newsfeed import allocate
+    kelly = {"A": 0.20, "B": 0.10}
+    # Under 100%: sizes as they are, the rest in SPY; a stock on both lists takes the lower half-Kelly.
+    w, info = allocate({"x": ["A"], "y": ["A", "B"]}, kelly, cap=0.30)
+    assert w == {"x": 0.20, "y": 0.10} and abs(info["spy"] - 0.70) < 1e-9 and info["scale"] == 1.0
+    # Over 100%: scaled proportionally to fit, nothing left for SPY.
+    held = {f"s{i}": ["A"] for i in range(8)}                       # 8 × 20% = 160%
+    w, info = allocate(held, kelly, cap=0.30)
+    assert abs(sum(w.values()) - 1.0) < 1e-9 and abs(info["scale"] - 1 / 1.6) < 1e-9 and info["spy"] < 1e-9
+    # The cap binds: one stock alone at 20% stays 20%; with a 15% cap it is cut and the rest goes to SPY.
+    w, info = allocate({"x": ["A"]}, kelly, cap=0.15)
+    assert w == {"x": 0.15} and abs(info["spy"] - 0.85) < 1e-9 and "x" in info["capped"]

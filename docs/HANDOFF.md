@@ -11,7 +11,7 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 66 tests
+.venv/bin/python -m pytest -q                   # 67 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
@@ -154,13 +154,18 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
 - All nine phases of PLAN-signals are done. Lab cleanup (2026-10-21): dropped the IV-warning list held long,
   IV-filtered S&P 500 Leaders ranks 6–10, both Fundamental Momentum ranks 6–10, S&P 500 Emerging Leaders and
   the earnings-reaction pair (with them the daily `earnings` step; `market.data.earnings` still works on demand).
-- **Newsfeed (#/news, 2026-10-21):** `market.reports.export_newsfeed` — per report, the actions of a portfolio
-  following `config.yaml → newsfeed.portfolio` (strategy shares; edit freely), reconciled per stock across
-  strategies (Buy / Add / Trim / Sell / Hold) with each strategy's reason and, for closed positions, the
-  result vs SPY. Caveat banner on the page. **Encrypted** (AES-256-GCM, PBKDF2) when `NEWSFEED_PASSWORD` is set
-  in `.env`; without it news.json is written in the clear — set it before any publishing. A GitHub secret only
-  reaches GitHub Actions; this build runs locally, so the password belongs in `.env` (and in a secret only if
-  the build moves to Actions). Other pages (holdings on Overview / Strategies) are not encrypted.
+- **Newsfeed (#/news, 2026-10-21):** `market.reports.export_newsfeed`, configured in `config.yaml → newsfeed`.
+  Candidates are included while their since-inception Sharpe beats SPY's over the same dates (re-checked each
+  run; S&P 500 Steady Leaders is currently excluded). Filtered lists (short-interest, IV) are shown with their
+  full base list, marking skipped names with the filter's reading. Each name: on-list-since date and gain.
+  Sizing: a stock's list half-Kelly; duplicates appear on every list and are sized once at the lowest; scaled
+  proportionally to 100% when the total is larger, else the remainder is SPY (called out); cap 30%. Report
+  history: Buy / Add / Trim / Sell / Hold with reasons and closed results vs SPY. Caveat banner on top.
+  **Encrypted** (AES-256-GCM, PBKDF2) when `NEWSFEED_PASSWORD` is set in `.env`; without it news.json is in the
+  clear — set it before publishing. A GitHub secret only reaches GitHub Actions; this build runs locally, so the
+  password goes in `.env` (and in a secret too only if the build moves to Actions).
+- New Lab strategy **S&P 400 Improving Fundamentals & Rank** (`emergingall_sp400`): Emerging Leaders without
+  the top-25 exclusion — 42% a year, Sharpe 1.21 from 2022-11 (Emerging 34%, 1.08), 77% overlap with Emerging.
 - The evening run now also computes the next report when tonight's close is its as-of session (Mon → Tue,
   Thu → Fri), so the site and newsfeed show actions before the open (`snapshot.upcoming_report`).
 - Next: trading-cost assumption in the evaluation; efficiency items; publishing., 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and

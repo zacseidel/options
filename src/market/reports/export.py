@@ -54,6 +54,7 @@ KEY_FEATURES = {
     "fmom_sp500": ["gross_margin_chg", "op_margin_chg", "ni_ttm_yoy", "rev_yoy_q"],
     "fmom_sp400": ["gross_margin_chg", "op_margin_chg", "ni_ttm_yoy", "rev_yoy_q"],
     "emerging_sp400": ["fmom", "rank_12m", "rank_change", "op_margin_chg"],
+    "emergingall_sp400": ["fmom", "rank_12m", "rank_change", "op_margin_chg"],
     "rerating_sp500": ["ps_chg", "ps", "ni_ttm_yoy", "rev_ttm_yoy"],
     "shrinkers_sp500": ["shares_yoy", "buybacks_ttm", "fcf_margin"],
     "divraise_sp900": ["raise"],

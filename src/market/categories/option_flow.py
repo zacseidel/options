@@ -50,15 +50,21 @@ def _load(con, panel) -> OptionFlow:
     return OptionFlow(con, panel)
 
 
+def iv_table(flow: OptionFlow, as_of: pd.Timestamp, member_ids) -> pd.DataFrame | None:
+    """Liquid names among `member_ids` on `as_of` with iv_rv and its cross-sectional percentile (`warned` = top
+    decile); None before option data. Shared by the categories and the newsfeed's filter explanations."""
+    today = flow.on(as_of)
+    if today is None:
+        return None
+    frame = today.reindex(sorted(set(member_ids)))[["iv_rv", "rv20", "term"]].dropna(subset=["iv_rv"])
+    frame = frame[frame["rv20"] >= MIN_RV]
+    frame = frame.assign(iv_rv_pct=frame["iv_rv"].rank(pct=True))
+    return frame.assign(warned=frame["iv_rv_pct"] >= WARN_DECILE)
+
+
 def iv_warnings(ctx: Context) -> pd.DataFrame | None:
     """Liquid S&P 500 / 400 names on `as_of` with iv_rv and its cross-sectional percentile; None before data."""
-    flow = ctx.source("option_flow").on(ctx.as_of)
-    if flow is None:
-        return None
-    ids = sorted(set(ctx.members("sp500")) | set(ctx.members("sp400")))
-    frame = flow.reindex(ids)[["iv_rv", "rv20", "term"]].dropna(subset=["iv_rv"])
-    frame = frame[frame["rv20"] >= MIN_RV]
-    return frame.assign(iv_rv_pct=frame["iv_rv"].rank(pct=True))
+    return iv_table(ctx.source("option_flow"), ctx.as_of, set(ctx.members("sp500")) | set(ctx.members("sp400")))
 
 
 def _skip_warned(ctx: Context, ranked: pd.DataFrame) -> pd.DataFrame:

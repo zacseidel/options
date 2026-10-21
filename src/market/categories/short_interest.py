@@ -47,13 +47,20 @@ def _load(con, panel) -> ShortInterest:
     return ShortInterest(con, panel)
 
 
+def crowding(si: ShortInterest, as_of: pd.Timestamp, member_ids) -> pd.DataFrame:
+    """Days to cover and its percentile among `member_ids` on `as_of` (`crowded` = top fifth). Shared by the
+    category and the newsfeed's filter explanations."""
+    dtc = si.on(as_of)["days_to_cover"].reindex(list(member_ids)).dropna()
+    pct = dtc.rank(pct=True)
+    return pd.DataFrame({"days_to_cover": dtc, "dtc_pct": pct, "crowded": pct >= CROWDED})
+
+
 def _skip_crowded(ctx: Context, universe: str, ranked: pd.DataFrame) -> pd.DataFrame:
-    readings = ctx.source("short_interest").on(ctx.as_of)
-    dtc = readings["days_to_cover"].reindex(ctx.members(universe)).dropna()
+    table = crowding(ctx.source("short_interest"), ctx.as_of, ctx.members(universe))
+    dtc = table["days_to_cover"]
     if dtc.empty:
         return pd.DataFrame(columns=["score"])                 # before short-interest history
-    pct = dtc.rank(pct=True)
-    crowded = pct.reindex(ranked.index) >= CROWDED
+    crowded = table["crowded"].reindex(ranked.index)
     kept = ranked[~crowded.fillna(False)]
     return kept.assign(days_to_cover=dtc.reindex(kept.index)).head(TOP_STORED)
 

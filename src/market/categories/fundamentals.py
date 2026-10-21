@@ -71,8 +71,9 @@ def fmom_sp400(ctx: Context) -> pd.DataFrame:
     return _fmom(ctx, "sp400")
 
 
-def _emerging(ctx: Context, universe: str) -> pd.DataFrame:
-    """Top-quintile Fundamental Momentum whose 12-month price rank is improving but outside the top 25."""
+def _emerging(ctx: Context, universe: str, outside_top: int | None = 25) -> pd.DataFrame:
+    """Top-quintile Fundamental Momentum whose 12-month price rank is improving (and, by default, outside the
+    top 25; `outside_top=None` keeps the leaders too)."""
     frame = _state(ctx, universe)
     if frame.empty:
         return pd.DataFrame(columns=["score"])
@@ -82,7 +83,9 @@ def _emerging(ctx: Context, universe: str) -> pd.DataFrame:
     rank_12m = (ranked["now"] / ranked["12m"] - 1).rank(ascending=False)
     frame = frame.assign(rank_12m=rank_12m.reindex(frame.index),
                          rank_change=leaders["rank_change"].reindex(frame.index))
-    frame = frame[(frame["fmom"] >= 0.8) & (frame["rank_12m"] > 25) & (frame["rank_change"] > 0)]
+    frame = frame[(frame["fmom"] >= 0.8) & (frame["rank_change"] > 0)]
+    if outside_top is not None:
+        frame = frame[frame["rank_12m"] > outside_top]
     frame = frame.sort_values(["fmom", "rank_change"], ascending=False).head(TOP_STORED)
     return frame[["fmom", "rank_12m", "rank_change", "op_margin_chg"]].assign(score=frame["fmom"])
 
@@ -124,3 +127,11 @@ def _shrinkers(ctx: Context, universe: str) -> pd.DataFrame:
           lookback_sessions=0, stage="lab")
 def shrinkers_sp500(ctx: Context) -> pd.DataFrame:
     return _shrinkers(ctx, "sp500")
+
+
+@category("emergingall_sp400", "S&P 400 Improving Fundamentals & Rank", "Fundamentals", "sp400",
+          "Like S&P 400 Emerging Leaders but without leaving out the top 25 by 12-month return: top-fifth Fundamental "
+          "Momentum names whose 12-month return rank is rising, ordered by fundamental score.",
+          lookback_sessions=280, stage="lab")
+def emergingall_sp400(ctx: Context) -> pd.DataFrame:
+    return _emerging(ctx, "sp400", outside_top=None)

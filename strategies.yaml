@@ -67,6 +67,7 @@ strategies:
   - {id: fmom_sp500.top5, category: fmom_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: fmom_sp400.top5, category: fmom_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: emerging_sp400.top5, category: emerging_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: emergingall_sp400.top5, category: emergingall_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: rerating_sp500.top5, category: rerating_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: shrinkers_sp500.top5, category: shrinkers_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   # Steady Leaders (docs/research/07-steady-leaders.md).
