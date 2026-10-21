@@ -18,7 +18,7 @@ Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
 
 ## Pipeline steps (`src/market/ops/run.py`)
 watchlists → universes (weekly) → disclosures → bars → fund_periods → signals →
-corpactions → market_caps → leaders → fundamentals → earnings → option_flow → categories → options → evaluation → export
+corpactions → market_caps → leaders → fundamentals → earnings → short_interest → option_flow → categories → options → evaluation → export
 
 New this session (bold):
 - **disclosures** (`market.smartmoney.ingest`): runs smartmoney's own `fetch_house` / `fetch_senate`
@@ -144,7 +144,9 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   Momentum / Emerging Leaders (500, 400), S&P 500 Re-rating and Share Shrinkers, earnings-reaction pair,
   Dividend Raisers, S&P 500 Steady Leaders. Engine: a held name with a one-day data gap is re-weighted at its
   last close (Biogen 2023-06-09 broke a NAV).
-- Next: Phase 7 (short interest), 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
+- **Phase 7 (done):** short interest — PLAN-signals §9; Lab: S&P 500 Leaders, Short-Interest Filter.
+  `python -m market.data.short_interest [--backfill]`, `python -m market.research.short_interest`.
+- Next: Phase 8 (shorts), 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
   clear decliners as candidates), 9 (convergence).
 
 ## Fixed 2026-10-21 (scheduled-run bugs)

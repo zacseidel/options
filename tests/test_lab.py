@@ -130,3 +130,14 @@ def test_ranks_12m_uses_members_on_the_day():
     r.panel, r._memo, r.ret = panel, {}, close / close.shift(252) - 1
     assert r.rank("sp500", idx[254]).to_dict() == {"A": 2.0, "B": 3.0, "C": 1.0}
     assert r.rank("sp500", idx[259]).to_dict() == {"A": 1.0, "B": 2.0}       # C left the index
+
+
+def test_short_interest_reading_waits_for_publication():
+    from market.categories.short_interest import ShortInterest
+    si = ShortInterest.__new__(ShortInterest)
+    si.si = pd.DataFrame({"security_id": ["A", "A"], "settlement_date": pd.to_datetime(["2026-09-15", "2026-09-30"]),
+                          "days_to_cover": [2.0, 5.0], "available": pd.to_datetime(["2026-09-25", "2026-10-12"])})
+    si._memo = {}
+    assert si.on(pd.Timestamp("2026-10-09")).at["A", "days_to_cover"] == 2.0     # the 09-30 reading isn't out yet
+    assert si.on(pd.Timestamp("2026-10-12")).at["A", "days_to_cover"] == 5.0
+    assert si.on(pd.Timestamp("2026-12-31")).empty                                # too old after 45 days

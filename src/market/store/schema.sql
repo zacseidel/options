@@ -324,3 +324,16 @@ CREATE TABLE IF NOT EXISTS earnings_events (
     accepted      TIMESTAMP NOT NULL,      -- US/Eastern, naive
     items         VARCHAR NOT NULL
 );
+
+-- ------------------------------------------------------------------ short interest (PLAN-signals §9)
+-- FINRA short interest (twice monthly, by settlement date) from Polygon, for tracked securities.
+-- `available` = settlement + 8 business days, when it is assumed public.
+CREATE TABLE IF NOT EXISTS short_interest (
+    security_id      VARCHAR NOT NULL,
+    settlement_date  DATE NOT NULL,
+    short_interest   DOUBLE,
+    avg_daily_volume DOUBLE,
+    days_to_cover    DOUBLE,
+    available        DATE NOT NULL,
+    PRIMARY KEY (security_id, settlement_date)
+);

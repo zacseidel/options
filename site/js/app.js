@@ -141,6 +141,7 @@ const FEATURE_LABELS = {
   rev_yoy_mean_8q: ["Avg growth (8q)", (v) => pct(v, 0)], rev_up_12q: ["Up quarters (of 12)", (v) => (v == null ? "—" : v.toFixed(0))],
   fcf_margin: ["FCF margin", (v) => pct(v, 0)], shares_yoy: ["Shares YoY", (v) => pct(v, 1, true)],
   ps_chg: ["P/S change", (v) => pct(v, 0, true)], ps: ["P/S", (v) => num(v, 1)], buybacks_ttm: ["Buybacks (TTM)", money],
+  days_to_cover: ["Days to cover", (v) => num(v, 1)],
   longevity: ["Weeks in top 50", (v) => (v == null ? "—" : `${Math.round(v * 26)}/26`)],
   raise: ["Dividend raise", (v) => pct(v, 0, true)],
   ear: ["Reaction vs SPY", (v) => pct(v, 1, true)], gap: ["Gap", (v) => pct(v, 1, true)],

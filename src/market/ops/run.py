@@ -11,6 +11,7 @@
   9. leaders           point-in-time Congress member and 13F fund leaderboards per report date
  10. fundamentals      EDGAR companyfacts for new companies and the day's 10-K / 10-Q filers
  11. earnings          EDGAR 8-K 2.02 earnings releases (new companies, the day's 8-K filers)
+ 11b. short_interest   FINRA short interest via Polygon, for new settlement dates
  12. option_flow       one-row-per-underlying summary of each new OPRA file (option-flow categories)
  13. categories        recompute recent report dates; full rebuild when a category's code changed
  14. options           option bars for the select option set (previous session's OPRA file, plus a
@@ -37,14 +38,14 @@ import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import ROOT
 from market.data import (bars, corpactions, earnings, fundamentals, market_caps, option_panel, securities,
-                         universe_wiki, watchlists)
+                         short_interest, universe_wiki, watchlists)
 from market.evaluate import engine
 from market.reports import export, snapshot
 from market.smartmoney import hedge, ingest, pipeline
 from market.store.db import connect
 
 STEPS = ["watchlists", "universes", "disclosures", "bars", "fund_periods", "signals", "corpactions", "market_caps",
-         "leaders", "fundamentals", "earnings", "option_flow", "categories", "options", "evaluation", "export"]
+         "leaders", "fundamentals", "earnings", "short_interest", "option_flow", "categories", "options", "evaluation", "export"]
 WEEKLY_DAY = 0                      # Monday: refresh slower-moving reference data
 
 
@@ -158,6 +159,11 @@ def step_fundamentals(full: bool) -> dict:
 def step_earnings(full: bool) -> dict:
     """8-K 2.02 earnings releases for companies never read and for the day's 8-K filers."""
     return earnings.sync()
+
+
+def step_short_interest(full: bool) -> dict:
+    """Short interest for settlement dates published since the last stored one."""
+    return short_interest.sync()
 
 
 def step_option_flow(full: bool) -> dict:

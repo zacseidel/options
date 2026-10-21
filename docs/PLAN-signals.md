@@ -224,7 +224,17 @@ From data already stored or from Phase 2: `div_initiators` (first dividend in �
 an S&P 900 parent — ticker events + Wikipedia change notes; hold `fixed_hold` 252), buyback acceleration
 (from `shrinkers`). Splits are dropped: we only have execution dates, not announcements.
 
-## 9. Short interest and short volume (Phase 7)
+## 9. Short interest and short volume (Phase 7) — built 2026-10-21
+
+**Status.** `short_interest` table (215 k readings, 1,527 companies, 2020-06 →; available = settlement + 8
+business days); daily step `short_interest` (one market-wide call per new settlement date). Research
+`docs/research/08-short-interest.md`: **days to cover** predicts underperformance in both indexes and
+both halves (top vs bottom fifth ≈ −2% to −3% over 63 sessions; among momentum leaders up to −17% over
+126 sessions in 2025–26); short % of shares and its change: nothing consistent. Kept: **S&P 500 Leaders,
+Short-Interest Filter** (skip the top fifth of days to cover) — 68% a year, Sharpe 1.07 vs 60% / 0.96
+unfiltered (2025+: 116% vs 90%). The same filter hurt S&P 400 Leaders and S&P 500 Rank Momentum → dropped.
+High days to cover is a short-candidate input for Phase 8. Short volume not used.
+
 
 `short_interest` (twice monthly, ~2 calls per company, 2017 →, `available_at` = settlement + 8 business
 days) and `short_volume` (daily, 2024 →). Used three ways: a **risk column** on every category list

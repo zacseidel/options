@@ -62,6 +62,7 @@ KEY_FEATURES = {
     "pead_down_sp900": ["ear", "gap", "vol_ratio"],
     "divraise_sp900": ["raise"],
     "steady_sp500": ["longevity", "rank_12m", "return_12m"],
+    "mom12si_sp500": ["return_12m", "days_to_cover", "rank_change"],
 }
 HOLD_LABELS = {
     "while_listed": "hold while listed",
