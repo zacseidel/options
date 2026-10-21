@@ -59,18 +59,13 @@ strategies:
   - {id: hedge_drivers.next5,    category: hedge_drivers,     slot: [6, 10], hold: while_listed}
   # ---------------------------------------------------------------- Lab (docs/PLAN-signals.md)
   # Option flow (docs/research/01-option-flow.md). History starts 2024-11 (options plan: 2 years).
-  - {id: ivrich_sp900.top10.hold21, category: ivrich_sp900, slot: [1, 10], hold: fixed_hold, params: {sessions: 21}, stage: lab, added: 2026-10-21}
   - {id: ivinverted_sp900.top10.hold21, category: ivinverted_sp900, slot: [1, 10], hold: fixed_hold, params: {sessions: 21}, stage: lab, added: 2026-10-21}
   - {id: mom12iv_sp500.top5,   category: mom12iv_sp500,   slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: mom12iv_sp500.next5,  category: mom12iv_sp500,   slot: [6, 10], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: mom12iv_sp400.top5,   category: mom12iv_sp400,   slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: rankmomiv_sp500.top5, category: rankmomiv_sp500, slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
   # Fundamentals (docs/research/02-fundamentals.md): EDGAR facts as first filed.
   - {id: fmom_sp500.top5, category: fmom_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: fmom_sp500.next5, category: fmom_sp500, slot: [6, 10], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: fmom_sp400.top5, category: fmom_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: fmom_sp400.next5, category: fmom_sp400, slot: [6, 10], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: emerging_sp500.top5, category: emerging_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: emerging_sp400.top5, category: emerging_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: rerating_sp500.top5, category: rerating_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
   - {id: shrinkers_sp500.top5, category: shrinkers_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
@@ -78,9 +73,6 @@ strategies:
   - {id: steady_sp500.top5,  category: steady_sp500,  slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
   # Short interest (docs/research/08-short-interest.md): S&P 500 Leaders skipping the most heavily shorted names.
   - {id: mom12si_sp500.top5,   category: mom12si_sp500,   slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  # Earnings reactions (docs/research/03-earnings.md): one lot per announcement, held 42 sessions.
-  - {id: pead_up_sp900.all.hold42,   category: pead_up_sp900,   slot: all, hold: fixed_hold, params: {sessions: 42}, stage: lab, added: 2026-10-21}
-  - {id: pead_down_sp900.all.hold42, category: pead_down_sp900, slot: all, hold: fixed_hold, params: {sessions: 42}, stage: lab, added: 2026-10-21}
   # Dividend raises ≥ 10% (docs/research/06-corporate-actions.md): one lot per announcement, held 126 sessions.
   - {id: divraise_sp900.all.hold126, category: divraise_sp900, slot: all, hold: fixed_hold, params: {sessions: 126}, stage: lab, added: 2026-10-21}
   # Shorts (docs/research/09-shorts.md): dividend cutters held short 126 sessions (borrow 0.5%/yr), and the

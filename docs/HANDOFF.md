@@ -11,14 +11,14 @@ cd ~/Projects/options
 .venv/bin/python -m market.ops.run              # daily pipeline (incremental)
 .venv/bin/python -m market.ops.run --full       # + weekly reference refresh, rebuild every category
 .venv/bin/python -m market.ops.run --only export
-.venv/bin/python -m pytest -q                   # 63 tests
+.venv/bin/python -m pytest -q                   # 66 tests
 cd site && python -m http.server 8792           # view the site at http://127.0.0.1:8792
 ```
 Python is the conda env at `.venv` (3.12). Secrets in `.env` (never print them).
 
 ## Pipeline steps (`src/market/ops/run.py`)
 watchlists → universes (weekly) → disclosures → bars → fund_periods → signals →
-corpactions → market_caps → leaders → fundamentals → earnings → short_interest → option_flow → categories → options → evaluation → export
+corpactions → market_caps → leaders → fundamentals → short_interest → option_flow → categories → options → evaluation → export
 
 New this session (bold):
 - **disclosures** (`market.smartmoney.ingest`): runs smartmoney's own `fetch_house` / `fetch_senate`
@@ -151,7 +151,19 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   Leaders-SI + 30% dividend-cut hedge. `python -m market.research.shorts` (~1 min).
 - **Phase 9 (researched, dropped):** convergence — PLAN-signals §11; the two Lab strategies were dropped
   (user); report kept. `python -m market.research.convergence` (~10 s).
-- All nine phases of PLAN-signals are done. Next: quarterly Lab review; publishing the site is still open., 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
+- All nine phases of PLAN-signals are done. Lab cleanup (2026-10-21): dropped the IV-warning list held long,
+  IV-filtered S&P 500 Leaders ranks 6–10, both Fundamental Momentum ranks 6–10, S&P 500 Emerging Leaders and
+  the earnings-reaction pair (with them the daily `earnings` step; `market.data.earnings` still works on demand).
+- **Newsfeed (#/news, 2026-10-21):** `market.reports.export_newsfeed` — per report, the actions of a portfolio
+  following `config.yaml → newsfeed.portfolio` (strategy shares; edit freely), reconciled per stock across
+  strategies (Buy / Add / Trim / Sell / Hold) with each strategy's reason and, for closed positions, the
+  result vs SPY. Caveat banner on the page. **Encrypted** (AES-256-GCM, PBKDF2) when `NEWSFEED_PASSWORD` is set
+  in `.env`; without it news.json is written in the clear — set it before any publishing. A GitHub secret only
+  reaches GitHub Actions; this build runs locally, so the password belongs in `.env` (and in a secret only if
+  the build moves to Actions). Other pages (holdings on Overview / Strategies) are not encrypted.
+- The evening run now also computes the next report when tonight's close is its as-of session (Mon → Tue,
+  Thu → Fri), so the site and newsfeed show actions before the open (`snapshot.upcoming_report`).
+- Next: trading-cost assumption in the evaluation; efficiency items; publishing., 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
   clear decliners as candidates), 9 (convergence).
 
 ## Fixed 2026-10-21 (scheduled-run bugs)

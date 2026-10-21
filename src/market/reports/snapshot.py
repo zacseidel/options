@@ -27,6 +27,13 @@ def report_dates(start: date, end: date) -> list[date]:
     return [d.date() for d in pd.date_range(start, end) if d.weekday() in REPORT_WEEKDAYS]
 
 
+def upcoming_report(panel: Panel) -> date | None:
+    """The next report date if the latest stored session is its as-of session (the evening before), so the
+    report is ready before the open it is published for (Monday evening → Tuesday, Thursday → Friday)."""
+    following = (panel.sessions[-1] + pd.offsets.BDay(1)).date()
+    return following if following.weekday() in REPORT_WEEKDAYS else None
+
+
 def shared_inputs(con: duckdb.DuckDBPyConnection, panel: Panel) -> dict:
     membership = con.execute(
         "SELECT universe, security_id, valid_from, valid_to FROM universe_membership WHERE security_id IS NOT NULL"
@@ -75,7 +82,7 @@ def build(start: date | None, end: date | None, categories: list[str] | None, or
     panel = load_panel(con)
     inputs = shared_inputs(con, panel)
     ticker_on = ticker_lookup(con)
-    end = end or date.today()
+    end = end or max(date.today(), upcoming_report(panel) or date.today())
     stats = {}
     for cat_id in categories or list(REGISTRY):
         cat = REGISTRY[cat_id]

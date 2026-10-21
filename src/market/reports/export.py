@@ -26,7 +26,7 @@ import pandas as pd
 import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import config, directory
-from market.reports import export_options, export_profiles, export_smartmoney
+from market.reports import export_newsfeed, export_options, export_profiles, export_smartmoney
 from market.data import watchlists
 from market.evaluate.engine import load_strategies
 from market.research import lead_time
@@ -47,19 +47,15 @@ KEY_FEATURES = {
     "congress_holdings": ["members", "dollars", "return_since"],
     "hedge_buys": ["funds", "top_funds", "value"],
     "hedge_drivers": ["funds", "held_by"],
-    "ivrich_sp900": ["iv_rv", "rv20", "term"],
     "ivinverted_sp900": ["term", "iv_rv", "rv20"],
     "mom12iv_sp500": ["return_12m", "iv_rv", "rank_change"],
     "mom12iv_sp400": ["return_12m", "iv_rv", "rank_change"],
     "rankmomiv_sp500": ["avg_rank", "return_3m", "return_12m", "iv_rv"],
     "fmom_sp500": ["gross_margin_chg", "op_margin_chg", "ni_ttm_yoy", "rev_yoy_q"],
     "fmom_sp400": ["gross_margin_chg", "op_margin_chg", "ni_ttm_yoy", "rev_yoy_q"],
-    "emerging_sp500": ["fmom", "rank_12m", "rank_change", "op_margin_chg"],
     "emerging_sp400": ["fmom", "rank_12m", "rank_change", "op_margin_chg"],
     "rerating_sp500": ["ps_chg", "ps", "ni_ttm_yoy", "rev_ttm_yoy"],
     "shrinkers_sp500": ["shares_yoy", "buybacks_ttm", "fcf_margin"],
-    "pead_up_sp900": ["ear", "gap", "vol_ratio"],
-    "pead_down_sp900": ["ear", "gap", "vol_ratio"],
     "divraise_sp900": ["raise"],
     "divcut_sp900": ["cut"],
     "steady_sp500": ["longevity", "rank_12m", "return_12m"],
@@ -233,6 +229,9 @@ def export() -> dict:
     stock_strategy_ids = {s.id for s in all_strategies if s.instrument == "stock"}
     sizes["options"] = _write(out_dir / "options.json", export_options.build(
         con, panel, all_strategies, metrics_by, navs, session_index, key_of, strategy_label))
+
+    # ---------------------------------------------------------------- newsfeed (encrypted when NEWSFEED_PASSWORD is set)
+    sizes["news"] = _write(out_dir / "news.json", export_newsfeed.export(con, panel, key_of))
 
     # ---------------------------------------------------------------- stocks
     first_report = min(c["first"] for c in category_meta)

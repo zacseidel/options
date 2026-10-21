@@ -8,7 +8,7 @@ Fundamentals are EDGAR XBRL facts as first filed, usable from the day after fili
   * revenue / EPS acceleration, multiple expansion and share shrinkage showed nothing reliable;
   * steady growers (revenue up in most of the last 12 quarters) did well until 2025, then lagged.
 
-`fmom_*` (Fundamental Momentum) ranks the survivors; Emerging Leaders, S&P 500 Re-rating and S&P 500
+`fmom_*` (Fundamental Momentum) ranks the survivors; S&P 400 Emerging Leaders, S&P 500 Re-rating and S&P 500
 Share Shrinkers test concentrated versions of other ideas. All are Lab.
 
 Tried and dropped 2026-10-21 (user, after the overview): Steady Compounders (S&P 500 −14% / S&P 400 −7% a
@@ -85,13 +85,6 @@ def _emerging(ctx: Context, universe: str) -> pd.DataFrame:
     frame = frame[(frame["fmom"] >= 0.8) & (frame["rank_12m"] > 25) & (frame["rank_change"] > 0)]
     frame = frame.sort_values(["fmom", "rank_change"], ascending=False).head(TOP_STORED)
     return frame[["fmom", "rank_12m", "rank_change", "op_margin_chg"]].assign(score=frame["fmom"])
-
-
-@category("emerging_sp500", "S&P 500 Emerging Leaders", "Fundamentals", "sp500",
-          "Top-fifth Fundamental Momentum names whose 12-month return rank is rising but still outside the top 25: "
-          "an attempt to catch future leaders before the momentum lists do.", lookback_sessions=280, stage="lab")
-def emerging_sp500(ctx: Context) -> pd.DataFrame:
-    return _emerging(ctx, "sp500")
 
 
 @category("emerging_sp400", "S&P 400 Emerging Leaders", "Fundamentals", "sp400",

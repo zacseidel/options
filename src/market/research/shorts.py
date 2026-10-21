@@ -88,7 +88,8 @@ def candidate_lists(con, panel, members) -> dict[str, tuple[pd.DataFrame, int, s
     for name, cat, hold in (("weak_earnings", "pead_down_sp900", 42), ("iv_warning", "ivrich_sp900", 21)):
         s = con.execute("SELECT as_of AS date, security_id FROM category_snapshots WHERE category_id = ? "
                         "AND origin = 'backtest'", [cat]).df()
-        out[name] = (s, hold, "default")
+        if not s.empty:                  # both lists were dropped from the Lab on 2026-10-21; their reports remain
+            out[name] = (s, hold, "default")
     # Monthly crowded list and weekly decliners.
     si = con.execute("SELECT security_id, settlement_date, days_to_cover, available FROM short_interest").df()
     si["settlement_date"], si["available"] = pd.to_datetime(si["settlement_date"]), pd.to_datetime(si["available"])

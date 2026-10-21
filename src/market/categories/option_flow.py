@@ -6,7 +6,8 @@ second to check), two are kept, both borderline on two years of data:
   * **implied vol far above realized vol** (top decile of 30-day IV ÷ 20-day realized vol) lagged SPY
     by ~1% over the next 21 sessions in both halves — the option market pricing risk the stock hasn't
     shown yet. Used two ways:
-      - `ivrich_sp900` — the warning list itself (a short-candidate list; long, it is expected to lag);
+      - the warning list itself (`ivrich_sp900`) was tracked as a long and then dropped (it lagged, as
+        expected; as a short it lost money too — docs/research/09-shorts.md);
       - the S&P 500 / 400 Leaders and S&P 500 Rank Momentum lists, skipping warned names.
   * **an inverted IV term structure** (30-day IV above long-dated IV: near-term fear) beat names with
     a steep upward term structure by ~1% a month in both halves → `ivinverted_sp900`.
@@ -58,18 +59,6 @@ def iv_warnings(ctx: Context) -> pd.DataFrame | None:
     frame = flow.reindex(ids)[["iv_rv", "rv20", "term"]].dropna(subset=["iv_rv"])
     frame = frame[frame["rv20"] >= MIN_RV]
     return frame.assign(iv_rv_pct=frame["iv_rv"].rank(pct=True))
-
-
-@category("ivrich_sp900", "Option-Implied Risk", "Option flow", "sp900",
-          "S&P 500 / 400 names whose 30-day implied volatility is furthest above their 20-day realized "
-          "volatility (top decile, liquid options, realized vol ≥ 15%). A warning list: these lagged SPY by ~1% a month.",
-          lookback_sessions=0, stage="lab")
-def ivrich_sp900(ctx: Context) -> pd.DataFrame:
-    frame = iv_warnings(ctx)
-    if frame is None:
-        return pd.DataFrame(columns=["score"])
-    frame = frame[frame["iv_rv_pct"] >= WARN_DECILE].sort_values("iv_rv", ascending=False).head(TOP_STORED)
-    return frame.assign(score=frame["iv_rv"])
 
 
 def _skip_warned(ctx: Context, ranked: pd.DataFrame) -> pd.DataFrame:

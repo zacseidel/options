@@ -225,3 +225,18 @@ tr.beats td { background: var(--up-wash); }
   .opt-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .opt-name { grid-column: 1 / -1; padding-top: 6px; }
 }
+
+/* ---- newsfeed */
+.caveat { border: 1px solid var(--down); background: var(--down-wash); border-radius: var(--radius); padding: 12px 14px; margin: 0 0 16px; }
+.caveat strong { color: var(--down); }
+.caveat p { margin: 4px 0; }
+.unlock { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.unlock input { padding: 6px 8px; border: 1px solid var(--ring); border-radius: 6px; background: var(--surface); color: inherit; min-width: 220px; }
+.unlock button { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--ring); background: var(--surface-2); color: inherit; cursor: pointer; }
+.news-report { margin: 18px 0; }
+.news-report h3 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.reasons { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.reasons li { margin: 1px 0; }
+.reasons .plus { color: var(--up); font-weight: 600; }
+.reasons .minus { color: var(--down); font-weight: 600; }
+details.small-moves summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 8px; }

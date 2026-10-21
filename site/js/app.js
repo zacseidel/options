@@ -1093,8 +1093,106 @@ async function labPage(root) {
   }
 }
 
+// ------------------------------------------------------------------ newsfeed
+function caveat() {
+  return h("div", { class: "caveat" },
+    h("p", {}, h("strong", {}, "Personal research project — not investment advice.")),
+    h("p", {}, "These are hypothetical actions generated automatically from backtested rules for my own study. Results are simulated, " +
+      "ignore trading costs and taxes, cover only a few years of a rising market, and may contain errors or stale data. " +
+      "Nothing here is a recommendation to buy or sell any security. Do not trade on it."));
+}
+
+async function decryptNews(file, password) {
+  const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: bytes(file.salt), iterations: file.iterations, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(file.iv) }, key, bytes(file.ciphertext));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+async function newsPage(root) {
+  root.append(caveat(), h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Newsfeed"),
+    h("p", { class: "lede" }, "What a portfolio following the strategies below would do at each report, reconciled across strategies: one position per stock, " +
+      "sized by the strategies that hold it. Reports publish before the open on Tuesdays and Fridays (computed the evening before)."))));
+  const file = await load("news.json");
+  const body = h("div");
+  root.appendChild(body);
+  if (!file) return body.appendChild(h("p", { class: "empty" }, "No newsfeed yet: it is written by the next export."));
+  if (!file.encrypted) return renderNews(body, file.data);
+  const remember = (() => { try { return sessionStorage.getItem("news-pw"); } catch { return null; } })();
+  const unlock = async (pw) => {
+    try {
+      const data = await decryptNews(file, pw);
+      try { sessionStorage.setItem("news-pw", pw); } catch {}
+      body.textContent = "";
+      renderNews(body, data);
+      return true;
+    } catch { return false; }
+  };
+  if (remember && await unlock(remember)) return;
+  const input = h("input", { type: "password", placeholder: "Password", "aria-label": "Newsfeed password", autocomplete: "current-password" });
+  const msg = h("span", { class: "muted small" });
+  const go = async () => { msg.textContent = "Checking…"; if (!(await unlock(input.value))) msg.textContent = "That password didn't work."; };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  body.append(h("p", {}, "This page is encrypted."), h("div", { class: "unlock" }, input, h("button", { onclick: go }, "Unlock"), msg));
+  input.focus();
+}
+
+const ACTION_CLASS = { Buy: "new", Add: "up", Trim: "down", Sell: "down", Hold: "flat" };
+
+function resultText(r) {
+  if (!r) return "";
+  const vs = r.spy == null ? "" : ` vs SPY ${pct(r.spy, 1, true)}`;
+  return r.pending ? ` (so far ${pct(r.return, 1, true)}${vs}, ${r.days}d)` : ` (closed ${pct(r.return, 1, true)}${vs} over ${r.days}d)`;
+}
+
+function renderNews(root, d) {
+  root.appendChild(h("p", { class: "muted small" }, `Data through ${fmtDate(d.data_through)} · generated ${d.generated_at.replace("T", " ")}`));
+  root.appendChild(h("h2", {}, "Strategies followed"));
+  root.appendChild(table([
+    { key: "name", label: "Strategy", sort: (r) => r.name, render: (r) => h("a", { href: `#/strategy/${r.id}` }, r.name), cls: () => "name-col" },
+    { key: "slot", label: "Takes", nosort: true, render: (r) => r.slot === "all" ? "every listing" : r.slot },
+    { key: "hold", label: "Hold", nosort: true, render: (r) => r.hold === "fixed_hold" ? `${r.sessions} sessions per listing` : "while listed" },
+    { key: "weight", label: "Share of portfolio", num: true, sort: (r) => r.weight, render: (r) => pct(r.weight, 0) },
+    { key: "stage", label: "", nosort: true, render: (r) => r.stage === "lab" ? h("span", { class: "badge new" }, "Lab") : "" },
+  ], d.portfolio, { sortKey: "weight", compact: true }));
+
+  for (const rep of d.reports) {
+    const big = rep.actions.filter((a) => Math.max(a.before, a.after) >= 0.01);
+    const small = rep.actions.filter((a) => Math.max(a.before, a.after) < 0.01);
+    const when = rep.upcoming ? h("span", { class: "badge new" }, `for the open on ${fmtDate(rep.date)}`)
+      : rep.filled ? h("span", { class: "muted small" }, `filled at the open on ${fmtDate(rep.date)}`) : h("span", { class: "badge flat" }, "pending");
+    const counts = ["Buy", "Add", "Trim", "Sell"].map((k) => [k, rep.actions.filter((a) => a.action === k).length]).filter(([, n]) => n);
+    const card = h("div", { class: "card news-report" },
+      h("h3", {}, `Report · ${fmtDate(rep.date)}`, when, h("span", { class: "muted small" },
+        `${counts.map(([k, n]) => `${n} ${k.toLowerCase()}`).join(" · ") || "no changes"} · ${rep.holding.length} positions after · prices as of ${fmtDate(rep.as_of)}`)));
+    const actionTable = (rows) => table([
+      { key: "action", label: "Action", sort: (r) => ["Buy", "Add", "Trim", "Sell", "Hold"].indexOf(r.action), render: (r) => h("span", { class: `badge ${ACTION_CLASS[r.action]}` }, r.action) },
+      { key: "key", label: "Stock", sort: (r) => r.key, render: (r) => h("span", {}, stockLink(r.key), h("span", { class: "muted small" }, r.name ? ` ${r.name.slice(0, 28)}` : "")) },
+      { key: "after", label: "Weight", num: true, sort: (r) => r.after, cls: () => "nowrap", render: (r) => `${pct(r.before, 1)} → ${pct(r.after, 1)}` },
+      { key: "why", label: "Why", nosort: true, render: (r) => h("ul", { class: "reasons" },
+          r.in.map((x) => h("li", {}, h("span", { class: "plus" }, "+ "), x.why)),
+          r.out.map((x) => h("li", {}, h("span", { class: "minus" }, "− "), x.why, h("span", { class: "muted" }, resultText(x.result))))) },
+    ], rows, { sortKey: "action", desc: false, compact: true });
+    if (big.length) card.appendChild(actionTable(big));
+    else card.appendChild(h("p", { class: "muted small" }, "No changes of 1% or more."));
+    if (small.length) card.appendChild(h("details", { class: "small-moves" }, h("summary", {}, `${small.length} small positions (under 1%)`), actionTable(small)));
+    root.appendChild(card);
+  }
+
+  root.appendChild(h("h2", {}, `Positions after the latest report (${d.current.length})`));
+  root.appendChild(table([
+    { key: "key", label: "Stock", sort: (r) => r.key, render: (r) => stockLink(r.key) },
+    { key: "weight", label: "Weight", num: true, sort: (r) => r.weight, render: (r) => pct(r.weight, 1) },
+    { key: "strategies", label: "Held by", nosort: true, render: (r) => r.strategies.join(", ") },
+    { key: "since", label: "Since", sort: (r) => r.since, render: (r) => (r.since ? fmtDate(r.since) : "—") },
+    { key: "return", label: "Return so far", num: true, sort: (r) => r.return, cls: (r) => cls(r.return), render: (r) => pct(r.return, 1, true) },
+  ], d.current, { sortKey: "weight", compact: true }));
+}
+
 // ------------------------------------------------------------------ shell
-const NAV = [["#/", "Overview"], ["#/reports", "Reports"], ["#/strategies", "Strategies"], ["#/options", "Options"], ["#/lab", "Lab"], ["#/categories", "Categories"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
+const NAV = [["#/", "Overview"], ["#/news", "News"], ["#/reports", "Reports"], ["#/strategies", "Strategies"], ["#/options", "Options"], ["#/lab", "Lab"], ["#/categories", "Categories"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
 
 function shell() {
   const nav = h("nav", { class: "main" }, NAV.map(([href, label]) => h("a", { href }, label)));
@@ -1147,6 +1245,7 @@ async function route() {
     else if (page === "strategy") await strategyPage(root, a);
     else if (page === "options") await optionsPage(root);
     else if (page === "lab") await labPage(root);
+    else if (page === "news") await newsPage(root);
     else if (page === "categories") await categoriesPage(root);
     else if (page === "category") await categoryPage(root, a);
     else if (page === "stocks") await stocksPage(root);

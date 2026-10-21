@@ -68,3 +68,20 @@ evaluation:
   kelly_min_closed_trades: 20
   benchmarks: [SPY, MDY, QQQ]
   windows: {all: null, 3y: 3, 1y: 1}
+
+# Newsfeed (site #/news): per report, what a portfolio following these strategies would buy, add, trim,
+# sell or keep, reconciled across strategies at the stock level. `weight` = share of the portfolio given to
+# each strategy (equal weight per position inside it). Edit freely; weights are normalized to 100%.
+# Supported holds: while_listed and fixed_hold. The data file is encrypted when NEWSFEED_PASSWORD is set
+# in .env (AES-GCM, key from PBKDF2-SHA256); the page asks for the password and decrypts in the browser.
+newsfeed:
+  reports: 16                   # report dates shown, newest first (the upcoming one included)
+  min_change: 0.005             # weight changes smaller than this are shown as Hold
+  portfolio:
+    - {strategy: mom12si_sp500.top5,          weight: 0.25}   # S&P 500 Leaders, short-interest filter
+    - {strategy: rankmom_sp500.top5,          weight: 0.15}   # S&P 500 Rank Momentum
+    - {strategy: steady_sp500.top5,           weight: 0.10}   # S&P 500 Steady Leaders
+    - {strategy: fmom_sp400.top5,             weight: 0.10}   # S&P 400 Fundamental Momentum
+    - {strategy: emerging_sp400.top5,         weight: 0.10}   # S&P 400 Emerging Leaders
+    - {strategy: laggards_mega10.top2.hold21, weight: 0.15}   # Megacap Laggards, 21-session lots
+    - {strategy: divraise_sp900.all.hold126,  weight: 0.15}   # Dividend Raisers, 126-session lots
