@@ -11,13 +11,14 @@
   9. leaders           point-in-time Congress member and 13F fund leaderboards per report date
  10. fundamentals      EDGAR companyfacts for new companies and the day's 10-K / 10-Q filers
  11. earnings          EDGAR 8-K 2.02 earnings releases (new companies, the day's 8-K filers)
- 12. option_flow       one-row-per-underlying summary of each new OPRA file (option-flow categories)
- 13. categories        recompute recent report dates; full rebuild when a category's code changed
- 14. options           option bars for the select option set (previous session's OPRA file, plus a
+ 12. insiders          Form 4 open-market purchases (SEC quarterly data sets + the day's filings)
+ 13. option_flow       one-row-per-underlying summary of each new OPRA file (option-flow categories)
+ 14. categories        recompute recent report dates; full rebuild when a category's code changed
+ 15. options           option bars for the select option set (previous session's OPRA file, plus a
                        batched re-stream for names newly entering an option slot)
- 15. evaluation        all strategies, stock and option (derived)
- 16. export            site/data JSON
- 17. publish           (not configured yet)
+ 16. evaluation        all strategies, stock and option (derived)
+ 17. export            site/data JSON
+ 18. publish           (not configured yet)
 
 Usage:  python -m market.ops.run [--full] [--only STEP ...] [--skip STEP ...]
 """
@@ -36,15 +37,15 @@ import pandas as pd
 import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import ROOT
-from market.data import (bars, corpactions, earnings, fundamentals, market_caps, option_panel, securities,
-                         universe_wiki, watchlists)
+from market.data import (bars, corpactions, earnings, fundamentals, insiders, market_caps, option_panel,
+                         securities, universe_wiki, watchlists)
 from market.evaluate import engine
 from market.reports import export, snapshot
 from market.smartmoney import hedge, ingest, pipeline
 from market.store.db import connect
 
 STEPS = ["watchlists", "universes", "disclosures", "bars", "fund_periods", "signals", "corpactions", "market_caps",
-         "leaders", "fundamentals", "earnings", "option_flow", "categories", "options", "evaluation", "export"]
+         "leaders", "fundamentals", "earnings", "insiders", "option_flow", "categories", "options", "evaluation", "export"]
 WEEKLY_DAY = 0                      # Monday: refresh slower-moving reference data
 
 
@@ -158,6 +159,11 @@ def step_fundamentals(full: bool) -> dict:
 def step_earnings(full: bool) -> dict:
     """8-K 2.02 earnings releases for companies never read and for the day's 8-K filers."""
     return earnings.sync()
+
+
+def step_insiders(full: bool) -> dict:
+    """Form 4 purchases: new SEC quarterly data sets, then the day's Form 4s for tracked companies."""
+    return insiders.sync()
 
 
 def step_option_flow(full: bool) -> dict:

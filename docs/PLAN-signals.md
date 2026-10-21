@@ -90,7 +90,17 @@ IV ÷ 20-day realized vol; skew level and change; term slope. First year picks, 
 `optflow_skew_sp900` (puts getting cheaper vs calls), plus bearish mirrors for §10.
 Hold ▸ DEFAULT `fixed_hold` 21 sessions, stacked, plus a `while_listed` variant.
 
-## 4. Implied-volatility method choice (Phase 5, after Phase 1)
+## 4. Implied-volatility method choice (Phase 5, after Phase 1) — built 2026-10-21
+
+**Status.** `instrument: adaptive` (`market.methods.adaptive`) picks one of the base's own tracked methods
+per window from the IV reading on the selection day. `docs/research/05-adaptive-options.md` scored 21 rules
+(raw IV ÷ RV thresholds and cross-sectional percentiles) on year 1, checked on year 2, choosing ONE rule for
+all bases: IV ÷ RV in the top fifth → Defensive, bottom fifth → Aggressive, else Balanced (switches ~30% of
+windows). **It did not beat Balanced**: lower in-sample Sharpe on all four bases; year 2 mixed (Megacap
+Leaders and Rank Momentum slightly better, S&P 500 Leaders worse). Kept as a Lab fourth tier on each base
+(Lab page; the Options page keeps its three tiers). Full window: Sharpe 1.26 vs Balanced 1.40 (S&P 500
+Leaders), 1.30 vs 1.43 (Rank Momentum), 0.78 vs 0.80 (Megacap), 1.34 vs 1.44 (Laggards).
+
 
 Add a fourth tier, **Adaptive**, to each option base (the three current tiers don't change). On each
 window entry it picks the method from that day's IV state: IV high vs its own history or vs realized vol →
@@ -171,7 +181,19 @@ volatility of that change over the last 8 quarters). ~5 y × 900 names ≈ 18 k 
 **Categories:** `pead_up` (top decile reaction + positive surprise + gap held), hold `fixed_hold` 42 and 63
 sessions; `pead_down` mirror for §10. Research: `research/03-pead.md`.
 
-## 7. Insider buying (Phase 4, after Phase 2)
+## 7. Insider buying (Phase 4, after Phase 2) — built 2026-10-21
+
+**Status.** `insider_trades`: Form 4 open-market purchases (code P) — SEC quarterly data sets 2021 Q1 →
+2026 Q1 (138 k purchases, all issuers) plus parsed Form 4 XML for tracked companies since (backfill paced at
+~6 requests/s; the SEC blocks faster clients). Daily step `insiders`. Events (`market.data.insider_signals`):
+officers / directors, ≥ $10k, dated the filing session. Research `docs/research/04-insiders.md`, measured vs
+the average S&P 500 / 400 stock: **little signal in these large companies** — slightly positive before
+2025, negative in 2025–26 (clusters −3.3% over 63 sessions out of sample). **Quality vs turnaround did not
+separate**; turnaround clusters did slightly better. Lab categories: Insider Clusters, Clusters–Quality,
+Clusters–Turnaround, C-Suite Buys (hold 63 sessions, one lot per event). Since 2021-10: C-suite 9.1% CAGR,
+clusters 4.4%, turnaround 4.7%, quality 0.6%; SPY 12.6%. Insider buying is known to work best in small
+companies, outside the S&P 900 — extending the `signals` universe to insider-bought names is the open follow-up.
+
 
 **Data.** Form 4 open-market purchases (code P, acquired) into `insider_trades`: backfill 5 y from the SEC's
 quarterly insider data sets; daily from the EDGAR daily index. Owner roles, value, % of holding increase,

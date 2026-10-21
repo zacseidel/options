@@ -142,10 +142,12 @@ const FEATURE_LABELS = {
   fcf_margin: ["FCF margin", (v) => pct(v, 0)], shares_yoy: ["Shares YoY", (v) => pct(v, 1, true)],
   ps_chg: ["P/S change", (v) => pct(v, 0, true)], ps: ["P/S", (v) => num(v, 1)], buybacks_ttm: ["Buybacks (TTM)", money],
   ear: ["Reaction vs SPY", (v) => pct(v, 1, true)], gap: ["Gap", (v) => pct(v, 1, true)],
+  insiders_30d: ["Insiders (30d)", (v) => (v == null ? "—" : v.toFixed(0))], value_30d: ["Bought (30d)", money],
+  names: ["Who", (v) => v || "—"],
   vol_ratio: ["Volume ×", (v) => (v == null ? "—" : `${v.toFixed(1)}×`)],
   term: ["IV 30d − long", (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)} pts`)],
 };
-const TEXT_FEATURES = new Set(["dip_date", "members", "top_funds", "last_disclosed"]);
+const TEXT_FEATURES = new Set(["dip_date", "members", "top_funds", "last_disclosed", "names"]);
 const GROUP_ORDER = ["Momentum", "Reversion", "Congress", "Hedge funds"];
 const shortDate = (v) => (v ? new Date(v + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—");
 const quarterOf = (d) => `Q${Math.floor((+d.slice(5, 7) - 1) / 3) + 1} ${d.slice(0, 4)}`;

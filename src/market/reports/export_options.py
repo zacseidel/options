@@ -80,7 +80,8 @@ def _stock_same(metrics_by: dict, base_id: str, methods) -> dict:
 
 def build(con, panel, strategies, metrics_by: dict, navs: pd.DataFrame, session_index: dict, key_of: dict,
           strategy_label) -> dict:
-    option_strats = [s for s in strategies if s.instrument != "stock"]
+    # Lab option methods (e.g. the Adaptive tier) are shown on the Lab page, not here.
+    option_strats = [s for s in strategies if s.instrument != "stock" and s.stage != "lab"]
     if not option_strats:
         return {}
     data = load_option_data(con, panel)

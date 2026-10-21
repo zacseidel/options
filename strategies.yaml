@@ -95,6 +95,11 @@ strategies:
   # Earnings reactions (docs/research/03-earnings.md): one lot per announcement, held 42 sessions.
   - {id: pead_up_sp900.all.hold42,   category: pead_up_sp900,   slot: all, hold: fixed_hold, params: {sessions: 42}, stage: lab, added: 2026-10-21}
   - {id: pead_down_sp900.all.hold42, category: pead_down_sp900, slot: all, hold: fixed_hold, params: {sessions: 42}, stage: lab, added: 2026-10-21}
+  # Insider buying (docs/research/04-insiders.md): one lot per event, held 63 sessions.
+  - {id: insider_clusters_sp900.all.hold63,   category: insider_clusters_sp900,   slot: all, hold: fixed_hold, params: {sessions: 63}, stage: lab, added: 2026-10-21}
+  - {id: insider_quality_sp900.all.hold63,    category: insider_quality_sp900,    slot: all, hold: fixed_hold, params: {sessions: 63}, stage: lab, added: 2026-10-21}
+  - {id: insider_turnaround_sp900.all.hold63, category: insider_turnaround_sp900, slot: all, hold: fixed_hold, params: {sessions: 63}, stage: lab, added: 2026-10-21}
+  - {id: insider_csuite_sp900.all.hold63,     category: insider_csuite_sp900,     slot: all, hold: fixed_hold, params: {sessions: 63}, stage: lab, added: 2026-10-21}
 
 # ------------------------------------------------------------------ options (PLAN §7b, D10–D13)
 # Each method below is run on each base strategy's own windows (same entries and exits as the
@@ -105,6 +110,9 @@ option_methods:
   # Tracked option methods, three per base, chosen 2026-10-09 from the option method grid
   # (docs/options_grid.md). Re-run `python -m market.evaluate.option_grid` periodically and revisit.
   # Fills are at the traded price (mid of the day's open and close), no spread haircut.
+  # Adaptive (Lab, docs/research/05-adaptive-options.md): per window, the base's Defensive method when the
+  # name's implied ÷ realized vol is in the top fifth of liquid names that day, Aggressive when in the
+  # bottom fifth, Balanced otherwise. It did not beat Balanced in-sample; kept to build a live record.
   short_dte:                       # cash-secured puts: any expiry in this DTE window
     default: [14, 21]
     laggards_mega10.top2.hold21: [30, 45]
@@ -119,15 +127,19 @@ option_methods:
       - {id: csp20,      tier: Defensive,  instrument: csp,  delta: -0.20}
       - {id: leap12m60h, tier: Balanced,   instrument: leap, expiry: 12m, delta: 0.60, sizing: 0.5}
       - {id: leap12m60f, tier: Aggressive, instrument: leap, expiry: 12m, delta: 0.60, sizing: 1.0}
+      - {id: adaptive, tier: Adaptive, instrument: adaptive, signal: pct, rich: 0.8, cheap: 0.2, when_rich: csp20, when_cheap: leap12m60f, otherwise: leap12m60h, stage: lab, added: 2026-10-21}
     rankmom_sp500.top5:
       - {id: csp20,      tier: Defensive,  instrument: csp,  delta: -0.20}
       - {id: diag6m30,   tier: Balanced,   instrument: diagonal, expiry: 6m, delta: 0.80, short_delta: 0.30, sizing: delta}
       - {id: leap12m60h, tier: Aggressive, instrument: leap, expiry: 12m, delta: 0.60, sizing: 0.5}
+      - {id: adaptive, tier: Adaptive, instrument: adaptive, signal: pct, rich: 0.8, cheap: 0.2, when_rich: csp20, when_cheap: leap12m60h, otherwise: diag6m30, stage: lab, added: 2026-10-21}
     mom12_megacap.top5:
       - {id: csp30,      tier: Defensive,  instrument: csp,  delta: -0.30}
       - {id: leap12m80h, tier: Balanced,   instrument: leap, expiry: 12m, delta: 0.80, sizing: 0.5}
       - {id: leap12m80f, tier: Aggressive, instrument: leap, expiry: 12m, delta: 0.80, sizing: 1.0}
+      - {id: adaptive, tier: Adaptive, instrument: adaptive, signal: pct, rich: 0.8, cheap: 0.2, when_rich: csp30, when_cheap: leap12m80f, otherwise: leap12m80h, stage: lab, added: 2026-10-21}
     laggards_mega10.top2.hold21:
       - {id: diag6m20,   tier: Defensive,  instrument: diagonal, expiry: 6m, delta: 0.80, short_delta: 0.20, sizing: delta}
       - {id: leap6m80h,  tier: Balanced,   instrument: leap, expiry: 6m, delta: 0.80, sizing: 0.5}
       - {id: leap12m80f, tier: Aggressive, instrument: leap, expiry: 12m, delta: 0.80, sizing: 1.0}
+      - {id: adaptive, tier: Adaptive, instrument: adaptive, signal: pct, rich: 0.8, cheap: 0.2, when_rich: diag6m20, when_cheap: leap12m80f, otherwise: leap6m80h, stage: lab, added: 2026-10-21}

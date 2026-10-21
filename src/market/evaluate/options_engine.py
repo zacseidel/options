@@ -19,6 +19,7 @@ import pandas as pd
 
 from market.config import config
 from market.evaluate.metrics import performance, trade_stats
+from market.methods.adaptive import IvSignal, branch
 from market.methods.hold_rules import HOLD_RULES, Trade, fill_price
 from market.methods.instruments.options import OptionData, simulate_window
 from market.data.options import option_root
@@ -34,6 +35,19 @@ def entry_exposure(data: OptionData, t: Trade, res) -> float | None:
     spot = data.stock_fill(t.security_id, t.entry_session)
     shares = sum(l.qty for l in opened if l.kind == "S")
     return (shares + sum(l.qty * (l.delta or 0.0) for l in opened if l.kind != "S")) * spot
+
+
+def simulate(data: OptionData, t: Trade, method: dict, signal: IvSignal | None = None):
+    """One window under `method`; an adaptive method first picks its branch from the IV reading.
+    Returns (result, branch or None)."""
+    chosen = None
+    if method["instrument"] == "adaptive":
+        value = signal.at(t.security_id, t.entry_session, method.get("signal", "ratio")) if signal else None
+        chosen = branch(method, value)
+        method = method["branches"][chosen]
+    res = simulate_window(data, t.security_id, option_root(t.ticker), t.entry_session, t.exit_session,
+                          method, FILL_HAIRCUT)
+    return res, chosen
 
 
 def load_option_data(con, panel) -> OptionData | None:
@@ -106,10 +120,12 @@ def evaluate_options(con, panel, mult: pd.DataFrame, strategies, base_trades: di
     tickers_now = dict(con.execute("SELECT security_id, ticker FROM securities").fetchall())
     out = {}
     stock_same_cache: dict[str, dict] = {}
+    signal = IvSignal(con, panel) if any(s.method["instrument"] == "adaptive" for s in strategies) else None
     for strat in strategies:
         windows = [t for t in base_trades[strat.base] if t.entry_session >= start]
-        main = [(t, simulate_window(data, t.security_id, option_root(t.ticker), t.entry_session,
-                                    t.exit_session, strat.method, FILL_HAIRCUT)) for t in windows]
+        runs = [(t, *simulate(data, t, strat.method, signal)) for t in windows]
+        main = [(t, res) for t, res, _ in runs]
+        branches = pd.Series([b for _, _, b in runs if b is not None]).value_counts().to_dict()
         nav = nav_from_paths(main, sessions)
         if strat.base not in stock_same_cache:
             stock_nav = build_stock_nav(windows, start)
@@ -187,6 +203,8 @@ def evaluate_options(con, panel, mult: pd.DataFrame, strategies, base_trades: di
             "premium_yield": round(ev_sum["premium"] / window_years, 4) if window_years else None,
             "stock_same": stock_same_cache[strat.base],
         })
+        if branches:
+            stats["branches"] = {k: int(v) for k, v in branches.items()}
         out[strat.id] = {"nav": nav, "stats": stats, "trades": frame, "legs": pd.DataFrame(leg_rows)}
         print(f"  {strat.id}: {n} windows, {time.time() - t0:.0f}s", flush=True)
     return out

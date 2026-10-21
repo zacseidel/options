@@ -66,6 +66,10 @@ KEY_FEATURES = {
     "munger_top50_fq": ["pct_vs_sma200", "dip_date", "market_cap"],
     "pead_up_sp900": ["ear", "gap", "vol_ratio"],
     "pead_down_sp900": ["ear", "gap", "vol_ratio"],
+    "insider_clusters_sp900": ["insiders_30d", "value_30d", "fmom", "names"],
+    "insider_quality_sp900": ["insiders_30d", "value_30d", "fmom", "names"],
+    "insider_turnaround_sp900": ["insiders_30d", "value_30d", "fmom", "names"],
+    "insider_csuite_sp900": ["insiders_30d", "value_30d", "names"],
 }
 HOLD_LABELS = {
     "while_listed": "hold while listed",

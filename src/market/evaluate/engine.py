@@ -24,6 +24,7 @@ import yaml
 from market.config import ROOT, config
 from market.evaluate.metrics import performance, trade_stats
 from market.evaluate.options_engine import evaluate_options
+from market.methods.adaptive import BRANCHES
 from market.methods.hold_rules import HOLD_RULES, Trade, fill_price
 from market.store.db import connect, replace_rows
 from market.store.panel import Panel, load_panel
@@ -72,6 +73,10 @@ def load_strategies(path=None) -> list[Strategy]:
 def method_label(m: dict) -> str:
     """Readable name for an option method, e.g. "LEAP 12m Δ0.60, 50% in calls"."""
     inst = m["instrument"]
+    if inst == "adaptive":
+        what = "IV pct" if m.get("signal") == "pct" else "IV ÷ RV"
+        return (f"Adaptive: {m['branches']['when_rich']['label']} when {what} ≥ {m['rich']:g}, "
+                f"{m['branches']['when_cheap']['label']} when ≤ {m['cheap']:g}, else {m['branches']['otherwise']['label']}")
     if inst == "csp":
         lo, hi = m["short_dte"]
         return f"Cash-secured put Δ{m['delta']:.2f}, {lo}–{hi}d"
@@ -91,7 +96,9 @@ def option_strategies(spec: dict | None, by_id: dict[str, Strategy]) -> list[Str
     out = []
     for base_id, methods in spec["bases"].items():
         base = by_id[base_id]
-        for m in methods:
+        built: dict[str, dict] = {}
+        adaptive = [m for m in methods if m["instrument"] == "adaptive"]
+        for m in (m for m in methods if m["instrument"] != "adaptive"):
             method = {**m, "short_dte": list(spec["short_dte"].get(base_id, spec["short_dte"]["default"])),
                       "leap_dte": dict(spec["leap_dte"][m.get("expiry", "12m")])}
             if m["instrument"] in ("covered_call", "diagonal"):
@@ -100,8 +107,16 @@ def option_strategies(spec: dict | None, by_id: dict[str, Strategy]) -> list[Str
             if m["instrument"] in ("leap", "diagonal"):
                 method.update({"delta_tol": spec["delta_tol"], "fallback": "stock"})
             method["label"] = method_label(method)
+            built[m["id"]] = method
             out.append(Strategy(f"{base_id}.{m['id']}", base.category, base.slot, base.hold, base.params,
                                 m["instrument"], base.visible, method, base_id,
+                                stage=m.get("stage", base.stage), added=_added(m.get("added", base.added))))
+        # Adaptive methods choose one of the base's own methods per window (market.methods.adaptive).
+        for m in adaptive:
+            method = {**m, "branches": {k: built[m[k]] for k in BRANCHES}}
+            method["label"] = method_label(method)
+            out.append(Strategy(f"{base_id}.{m['id']}", base.category, base.slot, base.hold, base.params,
+                                "adaptive", base.visible, method, base_id,
                                 stage=m.get("stage", base.stage), added=_added(m.get("added", base.added))))
     return out
 
