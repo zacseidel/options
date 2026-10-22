@@ -57,6 +57,9 @@ def publish() -> dict:
         commit = _git("commit-tree", tree, "-m", f"Site build {datetime.now():%Y-%m-%d %H:%M}", env=env)
         # A large post buffer: the default fails with HTTP 400 on a push of this size over HTTPS.
         _git("-c", "http.postBuffer=524288000", "push", "--force", "--quiet", REMOTE, f"{commit}:refs/heads/{BRANCH}", env=env)
+    # The push may record origin/gh-pages locally, pointing at objects that left with the throwaway store; drop it so
+    # git doesn't report a broken ref. (This clone also fetches only main: remote.origin.fetch.)
+    subprocess.run(["git", "update-ref", "-d", f"refs/remotes/{REMOTE}/{BRANCH}"], cwd=ROOT, capture_output=True)
     return {"branch": BRANCH, "commit": commit[:8], "files": files, "mb": round(size / 1e6, 1)}
 
 
