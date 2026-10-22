@@ -1,4 +1,4 @@
-# Handoff — where things stand (2026-10-21)
+# Handoff — where things stand (2026-10-22)
 
 Read this first, then `docs/PLAN.md` (Status table at the top) for the full design, and
 `docs/PLAN-signals.md` for the new signal families being built (2026-10-21: options flow, EDGAR
@@ -174,6 +174,34 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   Thu → Fri), so the site and newsfeed show actions before the open (`snapshot.upcoming_report`).
 - Next: trading-cost assumption in the evaluation; efficiency items; publishing., 8 (shorts: dividend cuts, weak earnings reactions, the IV warning list and
   clear decliners as candidates), 9 (convergence).
+
+## Site reorganized around strategies (2026-10-22, `docs/PLAN-site.md`)
+- **Model:**
+  - Universe → strategy (family) → variant. Families and short names live in `src/market/categories/families.py`.
+  - The Lab stage is gone: every strategy is `tracked` or `retired`, and `added` still marks where the out-of-sample
+    record starts.
+  - Pages: Overview (latest feed report, scoreboard, followed lists) · News · Strategies (by universe, variants per
+    family, ★ best) · Reports · Options · Congress · 13F · Stocks · Methodology.
+  - `#/lab` and `#/categories` redirect to Strategies. A category page is the "list" view of a variant.
+- **Best variant and feed** (`market.evaluate.champions`, run by the export):
+  - Variants are compared on the dates they share. A filter must beat the base by `champion_tie` 0.05.
+  - A best variant enters the feed at Sharpe ≥ 1.10 × SPY's over the same dates and leaves below 1.00× (`feed_state`
+    table).
+  - `config.yaml → newsfeed.candidates` is gone.
+- **One SPY Sharpe:**
+  - `metrics.performance()` stores `benchmark_sharpe` / `benchmark_max_drawdown` (SPY over the strategy's own
+    dates). Every page reads it.
+  - The 0.48 on the old Strategies page was SPY from 2021-10-19, the earliest strategy start.
+- **Strikethrough:**
+  - Filter variants (Stall, RSI, SI, IV) return their base ranking with an `excluded` reason
+    (`registry.with_exclusions`).
+  - The snapshot builder stores kept names as the list and skipped ones in `category_exclusions`.
+  - Pages show the base list with skipped names struck through. Kept lists were verified identical to before the
+    change.
+- **Index membership:** checked against Wikipedia on every run (`step_universes`, ~12 s). The security master refreshes
+  weekly, or at once when a change brings a new ticker.
+- Caveat: a category's `version` hashes only its own function. After editing a shared helper (`_skip_crowded`,
+  `_skip_warned`, `_reasonable_growth`), rebuild with `python -m market.reports.snapshot --category …`.
 
 ## Fixed 2026-10-21 (scheduled-run bugs)
 - The 17:30 run failed every weekday on `options`: before a session's OPRA file is published the

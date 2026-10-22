@@ -1,7 +1,7 @@
 """Daily update: every step idempotent and incremental (PLAN §11).
 
   1. watchlists        sync watchlists.yaml into universe membership
-  2. universes         Wikipedia + security master + id replay — weekly, or with --full
+  2. universes         Wikipedia index changes every run; security master weekly or when a ticker is new
   3. disclosures       new Congress PTRs (House, Senate) and 13F filings (EDGAR daily index)
   4. bars              grouped daily for any session not yet stored
   5. fund_periods      price 13F holding periods completed since the last run
@@ -65,20 +65,36 @@ def step_watchlists(full: bool) -> dict:
     return {name: {k: v for k, v in info.items() if v} for name, info in report.items()}
 
 
+def _index_rows(con) -> set[tuple]:
+    changes = con.execute("SELECT universe, date, action, ticker FROM universe_changes").fetchall()
+    current = con.execute("SELECT universe, ticker FROM universe_membership WHERE valid_to IS NULL AND source = ?",
+                          [universe_wiki.SOURCE]).fetchall()
+    return {("change", *r) for r in changes} | {("member", *r) for r in current}
+
+
 def step_universes(full: bool) -> dict:
+    """S&P 500 / 400 membership from Wikipedia on every run (two page reads), so an announced addition or removal
+    is picked up the same day. The security master (~1,500 lookups) refreshes weekly, or at once when a change
+    brings a ticker it has never seen; membership is then re-matched to security ids (no API calls)."""
     con = connect()
-    due = _weekly_due(con, "wiki_sp500", full)
+    weekly = _weekly_due(con, "securities", full)
+    before = _index_rows(con)
     con.close()
-    if not due:
-        return {"skipped": "refreshed within the week"}
     wiki = universe_wiki.sync(list(universe_wiki.PAGES))
-    secs = securities.sync()
+    con = connect()
+    added = _index_rows(con) - before
+    known = {r[0] for r in con.execute("SELECT DISTINCT ticker FROM ticker_history").fetchall()}
+    con.close()
+    new_tickers = sorted({row[-1] for row in added} - known)
+    secs = securities.sync() if weekly or new_tickers else None
     con = connect()
     resolved = universe_wiki.resolve_membership(con)
     con.close()
     return {"members": {u: (i["coverage_min"], i["coverage_max"]) for u, i in resolved.items()},
-            "change_events": {u: i["change_events"] for u, i in wiki.items()},
-            "securities": secs["securities"], "synthetic": secs["synthetic"]}
+            "index_changes": sorted(f"{r[1]} {r[2]} {r[3]} {r[4]}" for r in added if r[0] == "change") if before else "first load",
+            "new_tickers": new_tickers,
+            "securities": secs["securities"] if secs else "unchanged (weekly)",
+            "synthetic": secs["synthetic"] if secs else None}
 
 
 def step_disclosures(full: bool) -> dict:

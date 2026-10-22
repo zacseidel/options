@@ -8,11 +8,11 @@
 #   fixed_hold            every listing opens its own lot; sell N sessions after entry
 # instrument: stock for now; options instruments (csp, covered_call, leap, diagonal) come next.
 #
-# stage (docs/PLAN-signals.md §2): tracked (default) | lab | retired. Lab strategies run and are scored
-# like the rest but show only on the site's Lab page; `added: YYYY-MM-DD` freezes their rules on that
-# date, and the `since_added` metrics window is their out-of-sample record. Changing a Lab strategy's
-# rules means a new `added` date (or a new id). Retired strategies keep their stored results but are
-# no longer evaluated or shown.
+# stage: tracked (default) | retired. Retired strategies keep their stored results but are no longer evaluated
+# or shown. `added: YYYY-MM-DD` freezes a strategy's rules on that date; the `since_added` metrics window is its
+# out-of-sample record (changing the rules means a new `added` date or a new id).
+# Each strategy's category belongs to a family (src/market/categories/families.py), which sets its short display
+# name and which variants are compared for the News page (docs/PLAN-site.md).
 
 defaults:
   instrument: stock
@@ -57,29 +57,29 @@ strategies:
   - {id: hedge_buys.next5,       category: hedge_buys,        slot: [6, 10], hold: while_listed}
   - {id: hedge_drivers.top5,     category: hedge_drivers,     slot: [1, 5],  hold: while_listed}
   - {id: hedge_drivers.next5,    category: hedge_drivers,     slot: [6, 10], hold: while_listed}
-  # ---------------------------------------------------------------- Lab (docs/PLAN-signals.md)
+  # ---------------------------------------------------------------- signal families (docs/PLAN-signals.md)
   # Option flow (docs/research/01-option-flow.md). History starts 2024-11 (options plan: 2 years).
-  - {id: ivinverted_sp900.top10.hold21, category: ivinverted_sp900, slot: [1, 10], hold: fixed_hold, params: {sessions: 21}, stage: lab, added: 2026-10-21}
-  - {id: mom12iv_sp500.top5,   category: mom12iv_sp500,   slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: mom12iv_sp400.top5,   category: mom12iv_sp400,   slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: rankmomiv_sp500.top5, category: rankmomiv_sp500, slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: ivinverted_sp900.top10.hold21, category: ivinverted_sp900, slot: [1, 10], hold: fixed_hold, params: {sessions: 21}, added: 2026-10-21}
+  - {id: mom12iv_sp500.top5,   category: mom12iv_sp500,   slot: [1, 5],  hold: while_listed, added: 2026-10-21}
+  - {id: mom12iv_sp400.top5,   category: mom12iv_sp400,   slot: [1, 5],  hold: while_listed, added: 2026-10-21}
+  - {id: rankmomiv_sp500.top5, category: rankmomiv_sp500, slot: [1, 5],  hold: while_listed, added: 2026-10-21}
   # Fundamentals (docs/research/02-fundamentals.md): EDGAR facts as first filed.
-  - {id: fmom_sp500.top5, category: fmom_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: fmom_sp400.top5, category: fmom_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: emerging_sp400.top5, category: emerging_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: emergingall_sp400.top5, category: emergingall_sp400, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: rerating_sp500.top5, category: rerating_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
-  - {id: shrinkers_sp500.top5, category: shrinkers_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: fmom_sp500.top5, category: fmom_sp500, slot: [1, 5], hold: while_listed, added: 2026-10-21}
+  - {id: fmom_sp400.top5, category: fmom_sp400, slot: [1, 5], hold: while_listed, added: 2026-10-21}
+  - {id: emerging_sp400.top5, category: emerging_sp400, slot: [1, 5], hold: while_listed, added: 2026-10-21}
+  - {id: emergingall_sp400.top5, category: emergingall_sp400, slot: [1, 5], hold: while_listed, added: 2026-10-21}
+  - {id: rerating_sp500.top5, category: rerating_sp500, slot: [1, 5], hold: while_listed, added: 2026-10-21}
+  - {id: shrinkers_sp500.top5, category: shrinkers_sp500, slot: [1, 5], hold: while_listed, added: 2026-10-21}
   # Steady Leaders (docs/research/07-steady-leaders.md).
-  - {id: steady_sp500.top5,  category: steady_sp500,  slot: [1, 5],  hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: steady_sp500.top5,  category: steady_sp500,  slot: [1, 5],  hold: while_listed, added: 2026-10-21}
   # Short interest (docs/research/08-short-interest.md): S&P 500 Leaders skipping the most heavily shorted names.
-  - {id: mom12si_sp500.top5,   category: mom12si_sp500,   slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: mom12si_sp500.top5,   category: mom12si_sp500,   slot: [1, 5], hold: while_listed, added: 2026-10-21}
   # Dividend raises ≥ 10% (docs/research/06-corporate-actions.md): one lot per announcement, held 126 sessions.
-  - {id: divraise_sp900.all.hold126, category: divraise_sp900, slot: all, hold: fixed_hold, params: {sessions: 126}, stage: lab, added: 2026-10-21}
+  - {id: divraise_sp900.all.hold126, category: divraise_sp900, slot: all, hold: fixed_hold, params: {sessions: 126}, added: 2026-10-21}
   # Shorts (docs/research/09-shorts.md): dividend cutters held short 126 sessions (borrow 0.5%/yr), and the
   # S&P 500 Leaders short-interest filter with 30% of capital shorted in that basket.
-  - {id: divcut_sp900.all.short126, category: divcut_sp900, slot: all, hold: fixed_hold, params: {sessions: 126}, instrument: short, borrow: 0.005, stage: lab, added: 2026-10-21}
-  - {id: mom12si_sp500.top5.divcut_hedge30, overlay: {long: mom12si_sp500.top5, short: divcut_sp900.all.short126, weight: 0.3}, stage: lab, added: 2026-10-21}
+  - {id: divcut_sp900.all.short126, category: divcut_sp900, slot: all, hold: fixed_hold, params: {sessions: 126}, instrument: short, borrow: 0.005, added: 2026-10-21}
+  - {id: mom12si_sp500.top5.divcut_hedge30, overlay: {long: mom12si_sp500.top5, short: divcut_sp900.all.short126, weight: 0.3}, added: 2026-10-21}
 
 # ------------------------------------------------------------------ options (PLAN §7b, D10–D13)
 # Each method below is run on each base strategy's own windows (same entries and exits as the

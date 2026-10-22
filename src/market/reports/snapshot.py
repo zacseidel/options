@@ -62,18 +62,30 @@ def first_computable(panel: Panel, cat: Category) -> date:
     return panel.sessions[min(cat.lookback_sessions, len(panel.sessions) - 1)].date()
 
 
-def rows_for(cat: Category, ctx: Context, frame: pd.DataFrame, ticker_on, origin: str) -> list[dict]:
-    rows = []
-    for rank, (security_id, record) in enumerate(frame.iterrows(), start=1):
+def rows_for(cat: Category, ctx: Context, frame: pd.DataFrame, ticker_on, origin: str) -> tuple[list[dict], list[dict]]:
+    """(list rows, skipped rows). A filter variant's frame carries an `excluded` column (registry.with_exclusions):
+    kept names are ranked 1, 2, … and record their `base_rank`; skipped names go to `category_exclusions`."""
+    filtered = "excluded" in frame.columns
+    rows, skipped, rank = [], [], 0
+    for base_rank, (security_id, record) in enumerate(frame.iterrows(), start=1):
+        reason = record.get("excluded") if filtered else None
+        ticker = ticker_on(security_id, ctx.as_of.date())
+        if isinstance(reason, str):
+            skipped.append({"category_id": cat.id, "report_date": ctx.report_date, "security_id": security_id,
+                            "ticker": ticker, "base_rank": base_rank, "reason": reason, "origin": origin})
+            continue
+        rank += 1
         features = {k: (None if pd.isna(v) else (float(v) if isinstance(v, (int, float)) else str(v)))
-                    for k, v in record.drop(labels=["score"], errors="ignore").items()}
+                    for k, v in record.drop(labels=["score", "excluded"], errors="ignore").items()}
+        if filtered:
+            features["base_rank"] = float(base_rank)
         rows.append({
             "category_id": cat.id, "report_date": ctx.report_date, "as_of": ctx.as_of.date(),
-            "security_id": security_id, "ticker": ticker_on(security_id, ctx.as_of.date()), "rank": rank,
+            "security_id": security_id, "ticker": ticker, "rank": rank,
             "score": None if pd.isna(record.get("score")) else float(record["score"]),
             "features": json.dumps(features), "origin": origin, "version": cat.version,
         })
-    return rows
+    return rows, skipped
 
 
 def build(start: date | None, end: date | None, categories: list[str] | None, origin: str = "backtest") -> dict:
@@ -88,16 +100,18 @@ def build(start: date | None, end: date | None, categories: list[str] | None, or
         cat = REGISTRY[cat_id]
         first = max(start or date.min, first_computable(panel, cat))
         dates = [d for d in report_dates(first, end) if panel.session_on_or_before(d) is not None]
-        rows = []
+        rows, skipped = [], []
         for report_date in dates:
             ctx = Context(report_date=report_date, panel=panel, **inputs)
             if ctx.as_of is None or ctx.as_of.date() >= report_date:
                 continue
-            rows.extend(rows_for(cat, ctx, cat.compute(ctx), ticker_on, origin))
+            kept, skips = rows_for(cat, ctx, cat.compute(ctx), ticker_on, origin)
+            rows.extend(kept)
+            skipped.extend(skips)
         frame = pd.DataFrame(rows)
-        replace_rows(con, "category_snapshots", frame,
-                     "category_id = ? AND origin = ? AND report_date BETWEEN ? AND ?",
-                     [cat.id, origin, dates[0], dates[-1]])
+        where = "category_id = ? AND origin = ? AND report_date BETWEEN ? AND ?"
+        replace_rows(con, "category_snapshots", frame, where, [cat.id, origin, dates[0], dates[-1]])
+        replace_rows(con, "category_exclusions", pd.DataFrame(skipped), where, [cat.id, origin, dates[0], dates[-1]])
         stats[cat.id] = {"reports": len(dates), "rows": len(frame), "first": str(dates[0]), "last": str(dates[-1])}
     con.close()
     stats["_seconds"] = round(time.time() - t0, 1)

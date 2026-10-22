@@ -1,16 +1,16 @@
-"""Newsfeed (site #/news): the lists worth acting on, what they hold, and what changes at each report.
+"""Newsfeed (site #/news): the strategies worth acting on, what they hold, and what changes at each report.
 
-  1. **Inclusion.** Each candidate list (config `newsfeed.candidates`) is included only while its
-     since-inception Sharpe beats SPY's over the same dates — re-checked every run from the evaluation.
-  2. **The lists.** For each included list, its names on the latest report: held, next in line, or — for a
-     filtered list, shown with its full base list — skipped by the filter, with the filter's reading. Every
-     name shows when it joined the list (current unbroken stretch) and its gain since.
+  1. **Inclusion.** Each strategy's best variant (`market.evaluate.champions`) is followed while its since-inception
+     Sharpe beats SPY's over the same dates by the configured margins (enter at 1.10×, leave below 1.00×).
+  2. **The lists.** For each followed variant, its names on the latest report: held or next in line. A filtered
+     variant is shown in base order with the names its filter skipped struck through, with the filter's reading
+     (`category_exclusions`). Every name shows when it joined the list (current unbroken stretch) and its gain since.
   3. **Allocation.** Each held stock gets its list's half-Kelly (0.5 · (win rate − loss rate ÷ payoff), from
      the list's closed trades). A stock on several lists appears on each, flagged, and is sized once, at the
      lowest of those half-Kellys. If the total is above 100% everything is scaled down to 100%; if below,
      the rest sits in SPY. No stock above `cap`.
-  4. **Reports.** Per report: Buy / Add / Trim / Sell / Hold per stock vs the previous report, with each
-     list's reason and, for positions a list closes, that trade's result vs SPY.
+  4. **Reports.** Per report (Tuesday and Friday): Buy / Add / Trim / Sell / Hold per stock vs the previous report,
+     with each list's reason and, for positions a list closes, that trade's result vs SPY.
 
 Like every data file, it is encrypted when the site pass phrase is set (`market.reports.site_lock`).
 """
@@ -22,18 +22,14 @@ from datetime import datetime
 
 import pandas as pd
 
-from market.categories.option_flow import OptionFlow, iv_table
-from market.categories.registry import REGISTRY
-from market.categories.short_interest import ShortInterest, crowding
+from market.categories.families import FAMILIES, variant
 from market.config import config
+from market.evaluate import champions
 from market.evaluate.engine import load_strategies
-from market.evaluate.metrics import performance
 from market.methods.hold_rules import fill_price
 from market.reports.snapshot import upcoming_report
-from market.research.common import members_frame
 
 HOLDS = ("while_listed", "fixed_hold")
-FILTER_LABEL = {"short_interest": "short-interest filter", "iv": "IV filter"}
 
 
 def _pct(v, signed=True) -> str:
@@ -126,45 +122,67 @@ def _streak_start(snaps: pd.DataFrame, sid: str, report: pd.Timestamp, all_repor
     return start
 
 
-def build(con, panel, key_of: dict) -> dict:
-    cfg = config()["newsfeed"]
-    rf = config()["evaluation"]["risk_free_rate"]
-    by_id = {s.id: s for s in load_strategies()}
-    sessions = panel.sessions
-    metrics = {sid: json.loads(js) for sid, js in con.execute(
-        "SELECT strategy_id, metrics FROM strategy_metrics WHERE window_name = 'all'").fetchall()}
-    navs = con.execute("SELECT strategy_id, date, nav FROM nav_daily").df()
-    navs["date"] = pd.to_datetime(navs["date"])
-    navs = navs.pivot(index="date", columns="strategy_id", values="nav")
+def strategy_name(s) -> str:
+    """Short display name of a strategy: the variant's short name, plus its slot when it isn't the top one."""
+    name = variant(s.category).short
+    return name if s.slot == "all" or s.slot[0] == 1 else f"{name} #{s.slot[0]}–{s.slot[1]}"
 
-    # 1. Inclusion: since-inception Sharpe vs SPY over the same dates.
+
+def _reason(info: dict, cfg: dict, was_in: bool) -> str:
+    sharpe, spy = info.get("sharpe"), info.get("spy_sharpe")
+    if sharpe is None or spy is None:
+        return "not enough history yet"
+    if not info.get("sized"):
+        return "no positive half-Kelly yet (needs 20 closed trades)"
+    vs = f"Sharpe {sharpe:.2f}" + (f" = {sharpe / spy:.2f}× SPY's {spy:.2f}" if spy > 0 else f" vs SPY's {spy:.2f}")
+    if info["in_feed"]:
+        if sharpe >= champions.threshold(spy, cfg["margin_in"]):
+            return f"{vs} over the same dates (enters at {cfg['margin_in']:.2f}×)"
+        return f"{vs}: below the {cfg['margin_in']:.2f}× entry bar but stays in until it falls below SPY's"
+    return f"{vs} over the same dates; enters at {cfg['margin_in']:.2f}×"
+
+
+def _why_champion(info: dict, by_id: dict) -> str | None:
+    scored = [v for v in info["variants"] if v.get("common_sharpe") is not None]
+    if len(scored) < 2:
+        return None
+    champ = next(v for v in scored if v["id"] == info["champion"])
+    others = sorted((v for v in scored if v is not champ), key=lambda v: -v["common_sharpe"])
+    vs = ", ".join(f"{strategy_name(by_id[v['id']])} {v['common_sharpe']:.2f}" for v in others)
+    return f"Sharpe {champ['common_sharpe']:.2f} since {info['common_start']} (the dates all variants share) vs {vs}"
+
+
+def build(con, panel, key_of: dict, families: dict | None = None) -> dict:
+    cfg = config()["newsfeed"]
+    strategies = load_strategies()
+    by_id = {s.id: s for s in strategies}
+    sessions = panel.sessions
+    metrics, _ = champions.load_inputs(con, strategies)
+    if families is None:
+        families = champions.update_feed(con, champions.compute(con, strategies, *champions.load_inputs(con, strategies)))
+
+    # 1. Inclusion: each strategy's champion, followed while it beats SPY by the margins.
     candidates, included = [], []
-    for c in cfg["candidates"]:
-        s = by_id.get(c["strategy"])
-        if s is None or s.hold not in HOLDS or s.instrument != "stock" or s.id not in navs:
+    for fid, info in families.items():
+        if not info.get("champion"):
             continue
+        s = by_id[info["champion"]]
         m = metrics.get(s.id, {})
-        nav = navs[s.id].dropna()
-        spy = navs["bench.SPY"].reindex(nav.index).dropna()
-        spy_sharpe = performance(spy, rf).get("sharpe") if len(spy) > 20 else None
-        hk = m.get("half_kelly")
-        ok = m.get("sharpe") is not None and spy_sharpe is not None and m["sharpe"] > spy_sharpe and (hk or 0) > 0
-        reason = (f"Sharpe {m.get('sharpe', 0):.2f} beats SPY's {spy_sharpe:.2f} over the same dates" if ok else
-                  f"Sharpe {m.get('sharpe') or 0:.2f} does not beat SPY's {spy_sharpe or 0:.2f} over the same dates"
-                  if (hk or 0) > 0 else "no positive half-Kelly yet")
-        entry = {"id": s.id, "name": REGISTRY[s.category].name, "category": s.category, "stage": s.stage,
-                 "base": c.get("base"), "base_name": REGISTRY[c["base"]].name if c.get("base") else None,
-                 "filter": c.get("filter"), "slot": s.slot, "hold": s.hold, "sessions": s.params.get("sessions"),
-                 "included": ok, "reason": reason,
+        fam = FAMILIES[fid]
+        entry = {"id": s.id, "family": fid, "family_name": fam.name, "family_short": fam.short,
+                 "name": strategy_name(s), "category": s.category, "filter": variant(s.category).filter,
+                 "slot": s.slot, "hold": s.hold, "sessions": s.params.get("sessions"),
+                 "included": info["in_feed"], "since": info.get("since"), "reason": _reason(info, cfg, info["in_feed"]),
+                 "why_champion": _why_champion(info, by_id),
                  "metrics": {k: m.get(k) for k in ("start", "cagr", "sharpe", "max_drawdown", "half_kelly", "win_rate",
                                                    "payoff_ratio", "closed_trades", "median_hold_days")},
-                 "spy_sharpe": spy_sharpe}
+                 "spy_sharpe": info.get("spy_sharpe"), "ratio": info.get("ratio")}
         candidates.append(entry)
-        if ok:
+        if info["in_feed"]:
             included.append((s, entry))
     kelly = {s.id: e["metrics"]["half_kelly"] for s, e in included}
 
-    cats = sorted({s.category for s, _ in included} | {e["base"] for _, e in included if e["base"]})
+    cats = sorted({s.category for s, _ in included}) or ["-"]
     snaps = con.execute(f"SELECT category_id, report_date, as_of, security_id, ticker, rank, features "
                         f"FROM category_snapshots WHERE origin = 'backtest' AND category_id IN "
                         f"({','.join('?' * len(cats))})", cats).df()
@@ -172,49 +190,31 @@ def build(con, panel, key_of: dict) -> dict:
     snaps["features"] = snaps["features"].map(json.loads)
     by_cat = {c: g for c, g in snaps.groupby("category_id")}
     empty = snaps.iloc[0:0]
+    skipped = con.execute(f"SELECT category_id, report_date, security_id, base_rank, reason FROM category_exclusions "
+                          f"WHERE origin = 'backtest' AND category_id IN ({','.join('?' * len(cats))})", cats).df()
+    skipped["report_date"] = pd.to_datetime(skipped["report_date"])
+    skip_reason = {(r.category_id, r.report_date, r.security_id): r.reason for r in skipped.itertuples(index=False)}
+    skipped_by = {k: g for k, g in skipped.groupby(["category_id", "report_date"])}
+    ids = [s.id for s, _ in included] or ["-"]
     trades = con.execute("SELECT strategy_id, security_id, signal_date, entry_date, exit_signal_date, exit_date, "
                          "return_total, status FROM trades WHERE strategy_id IN "
-                         f"({','.join('?' * len(included))})", [s.id for s, _ in included]).df()
+                         f"({','.join('?' * len(ids))})", ids).df()
     for col in ("signal_date", "entry_date", "exit_signal_date", "exit_date"):
         trades[col] = pd.to_datetime(trades[col])
     spy_tr = panel.tr[con.execute("SELECT security_id FROM securities WHERE type = 'ETF' AND ticker = 'SPY'").fetchone()[0]]
     names = dict(con.execute("SELECT security_id, name FROM securities").fetchall())
-    members = members_frame(con)
-    filters = {"short_interest": ShortInterest(con, panel) if any(e["filter"] == "short_interest" for _, e in included) else None,
-               "iv": OptionFlow(con, panel) if any(e["filter"] == "iv" for _, e in included) else None}
 
     upcoming = upcoming_report(panel)
     all_reports = sorted(d for d in snaps["report_date"].unique() if d.weekday() in (1, 4))
     shown = all_reports[-(cfg["reports"] + 1):]
     latest = shown[-1]
 
-    def members_on(universe, d):
-        m = members[(members["valid_from"] <= d) & (members["valid_to"] > d)]
-        return m[m["universe"].isin(universe)]["security_id"].unique()
-
     def as_of(report) -> pd.Timestamp:
         return sessions[min(_sessions_index(sessions, report), len(sessions)) - 1]
 
-    filter_cache: dict = {}
-
-    def filter_reading(kind, report, sid) -> str | None:
-        """Why the filter skips `sid` on `report`, or None if it doesn't."""
-        key = (kind, report)
-        if key not in filter_cache:
-            d = as_of(report)
-            if kind == "short_interest":
-                filter_cache[key] = crowding(filters[kind], d, members_on(["sp500"], d))
-            else:
-                filter_cache[key] = iv_table(filters[kind], d, members_on(["sp500", "sp400"], d))
-        table = filter_cache[key]
-        if table is None or sid not in table.index:
-            return None
-        r = table.loc[sid]
-        if kind == "short_interest" and r["crowded"]:
-            return f"heavily shorted: {r['days_to_cover']:.1f} days to cover (top {max(1, round(100 - r['dtc_pct'] * 100))}% of the S&P 500)"
-        if kind == "iv" and r["warned"]:
-            return f"options price {r['iv_rv']:.1f}× its realized volatility (top {max(1, round(100 - r['iv_rv_pct'] * 100))}% of the S&P 500 / 400)"
-        return None
+    def filter_reading(category, report, sid) -> str | None:
+        """Why the variant's filter skipped `sid` on `report`, or None if it didn't."""
+        return skip_reason.get((category, report, sid))
 
     def spy_return(start, end) -> float | None:
         before = spy_tr.loc[:start - pd.Timedelta(days=1)].dropna()
@@ -266,26 +266,38 @@ def build(con, panel, key_of: dict) -> dict:
     last_close = panel.close.iloc[-1]
     open_trades = trades[trades["status"] == "open"]
     for s, e in included:
-        shown_cat = e["base"] or s.category
-        rows = by_cat.get(shown_cat, empty)
+        rows = by_cat.get(s.category, empty)
         today = rows[rows["report_date"] == latest].sort_values("rank")
         top = today[today["rank"] <= cfg["depth"]] if s.slot != "all" or s.hold != "fixed_hold" else today
         held = p1[s.id]
         extra = [sid for sid in held if sid not in set(top["security_id"])]
-        own = by_cat.get(s.category, empty)
-        own_today = own[own["report_date"] == latest].set_index("security_id")
-        out_rows = []
+        own_today = today.set_index("security_id")
+        slot_end = None if s.slot == "all" else s.slot[1]
+        placed = []                                   # (position in the base ranking, row)
         for r in top.itertuples(index=False):
-            out_rows.append(_list_row(r.security_id, int(r.rank), r.features, s, e, held, own_today, rows, latest,
-                                      all_reports, sessions, panel, last_close, key_of, names, w1, held1, list_name,
-                                      filter_reading, open_trades))
+            row = _list_row(r.security_id, int(r.rank), r.features, s, e, held, own_today, rows, latest, all_reports,
+                            sessions, panel, last_close, key_of, names, w1, held1, list_name, open_trades)
+            base_rank = int(r.features.get("base_rank") or r.rank)
+            if slot_end and r.rank <= slot_end < base_rank:
+                row["note"] = "moves up for a skipped name"
+            placed.append((base_rank, row))
+        skips = skipped_by.get((s.category, latest))
+        if skips is not None and placed:
+            last = max(b for b, _ in placed)
+            for r in skips[skips["base_rank"] <= last].itertuples(index=False):
+                placed.append((int(r.base_rank), {"rank": None, "key": key_of.get(r.security_id, r.security_id),
+                                                  "name": names.get(r.security_id), "status": "filtered",
+                                                  "reason": r.reason, "added": None, "days": None, "gain": None,
+                                                  "feature": "", "weight": None, "also_on": []}))
+        out_rows = [row | {"base_rank": b} for b, row in sorted(placed, key=lambda x: x[0])]
         for sid in extra:
-            row = own[(own["security_id"] == sid)].sort_values("report_date").iloc[-1] if not own[own["security_id"] == sid].empty else None
+            own_rows = rows[rows["security_id"] == sid]
+            row = own_rows.sort_values("report_date").iloc[-1] if not own_rows.empty else None
             out_rows.append(_list_row(sid, None, row["features"] if row is not None else {}, s, e, held, own_today,
-                                      own, latest, all_reports, sessions, panel, last_close, key_of, names, w1, held1,
-                                      list_name, filter_reading, open_trades))
-        lists_out.append({"id": s.id, "name": e["name"], "shown": REGISTRY[shown_cat].name,
-                          "filter": FILTER_LABEL.get(e["filter"]), "half_kelly": kelly[s.id], "rows": out_rows})
+                                      rows, latest, all_reports, sessions, panel, last_close, key_of, names, w1, held1,
+                                      list_name, open_trades))
+        lists_out.append({"id": s.id, "name": e["name"], "family": e["family_name"], "filter": e["filter"],
+                          "half_kelly": kelly[s.id], "slot_end": slot_end, "rows": out_rows})
 
     # 4. Reports.
     reports_out = []
@@ -347,18 +359,14 @@ def build(con, panel, key_of: dict) -> dict:
 
 
 def _list_row(sid, rank, features, s, e, held, own_today, rows, latest, all_reports, sessions, panel, last_close,
-              key_of, names, weights, held_by, list_name, filter_reading, trades_open=None) -> dict:
-    """One name on a list: status (held / next in line / filtered out), since added, gain since."""
+              key_of, names, weights, held_by, list_name, trades_open=None) -> dict:
+    """One name on a list: status (held / next in line), since added, gain since."""
     if sid in held:
         status, reason = "held", None
+    elif sid in own_today.index and s.slot != "all":
+        status, reason = "next", f"#{int(own_today.loc[sid, 'rank'])} on {e['name']}, outside the top {s.slot[1]}"
     else:
-        reading = filter_reading(e["filter"], latest, sid) if e["filter"] else None
-        if reading:
-            status, reason = "filtered", reading
-        elif sid in own_today.index:
-            status, reason = "next", f"#{int(own_today.loc[sid, 'rank'])} on {e['name']}, outside the top {s.slot[1]}"
-        else:
-            status, reason = "next", "not in the list's top slots"
+        status, reason = "next", "not in the list's top slots"
     start = _streak_start(rows, sid, latest, all_reports)
     added = gain = days = None
     if start is None and sid in held and trades_open is not None:
@@ -387,10 +395,9 @@ def _list_row(sid, rank, features, s, e, held, own_today, rows, latest, all_repo
 def _exit_reason(s, e, sid, cur, by_cat, empty, filter_reading) -> str:
     if s.hold != "while_listed":
         return f"{s.params['sessions']}-session hold on {e['name']} ended"
-    if e["filter"]:
-        reading = filter_reading(e["filter"], cur, sid)
-        if reading:
-            return f"skipped by the {FILTER_LABEL[e['filter']]}: {reading}"
-    rows = by_cat.get(e["base"] or s.category, empty)
+    reading = filter_reading(s.category, cur, sid)
+    if reading:
+        return f"skipped by the {e['filter']} filter on {e['name']}: {reading}"
+    rows = by_cat.get(s.category, empty)
     now = rows[(rows["report_date"] == cur) & (rows["security_id"] == sid)]
-    return f"fell to #{int(now['rank'].iloc[0])} on {e['base_name'] or e['name']}" if not now.empty else f"no longer on {e['base_name'] or e['name']}"
+    return f"fell to #{int(now['rank'].iloc[0])} on {e['name']}" if not now.empty else f"no longer on {e['name']}"

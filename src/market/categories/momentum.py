@@ -10,7 +10,7 @@ import math
 
 import pandas as pd
 
-from market.categories.registry import Context, category
+from market.categories.registry import Context, category, with_exclusions
 
 TOP_STORED = 10
 
@@ -79,9 +79,10 @@ def mom12stall_sp500(ctx: Context) -> pd.DataFrame:
     isolated = int(stalled.reindex(top10).fillna(False).sum()) <= ISOLATED_STALL_MAX
     leaders = leaders.assign(sessions_since_high=since.reindex(leaders.index),
                              stall_breadth=int(stalled.reindex(top10).fillna(False).sum()))
-    if isolated:
-        leaders = leaders[~stalled.reindex(leaders.index).fillna(False)]
-    return leaders.head(TOP_STORED)
+    skip = stalled.reindex(leaders.index).fillna(False) if isolated else pd.Series(False, index=leaders.index)
+    reasons = pd.Series({sid: f"stalled: last 60-session high {since[sid]:.0f} sessions ago" for sid in leaders.index[skip]},
+                        dtype=object)
+    return with_exclusions(leaders, reasons, TOP_STORED)
 
 
 def _rsi(ctx: Context, ids: list[str], period: int = 14, history: int = 150) -> pd.Series:
@@ -101,9 +102,11 @@ def _reasonable_growth(ctx: Context, universe: str) -> pd.DataFrame:
     px = ctx.closes(ids, "now", "12m").dropna()
     frame = pd.DataFrame({"return_12m": px["now"] / px["12m"] - 1})
     frame["rsi_14"] = _rsi(ctx, list(frame.index)).reindex(frame.index)
-    frame = frame[(frame["rsi_14"] > 20) & (frame["rsi_14"] < 80)]
-    frame = frame.sort_values("return_12m", ascending=False).head(TOP_STORED)
-    return frame.assign(score=frame["return_12m"])
+    frame = frame.sort_values("return_12m", ascending=False, kind="stable")
+    band = (frame["rsi_14"] > 20) & (frame["rsi_14"] < 80)
+    reasons = pd.Series({sid: f"RSI {rsi:.0f}, outside 20–80" if pd.notna(rsi) else "no RSI"
+                         for sid, rsi in frame.loc[~band, "rsi_14"].items()}, dtype=object)
+    return with_exclusions(frame.assign(score=frame["return_12m"]), reasons, TOP_STORED)
 
 
 @category("rgrowth_sp500", "S&P 500 Reasonable Growth Leaders", "Momentum", "sp500",

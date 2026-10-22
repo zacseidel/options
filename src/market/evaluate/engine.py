@@ -42,11 +42,11 @@ class Strategy:
     visible: bool
     method: dict = field(default_factory=dict)   # option method settings (instrument != 'stock')
     base: str | None = None                      # the stock strategy whose windows an option method uses
-    stage: str = "tracked"                       # lab | tracked | retired (PLAN-signals §2)
+    stage: str = "tracked"                       # tracked | retired
     added: date | None = None                    # rules frozen on this date; later results are out of sample
 
 
-STAGES = ("lab", "tracked", "retired")
+STAGES = ("tracked", "retired")
 STOCK_LIKE = ("stock", "short")                  # instruments built from a hold rule's trades directly
 OPTION_INSTRUMENTS = ("csp", "covered_call", "leap", "diagonal")
 

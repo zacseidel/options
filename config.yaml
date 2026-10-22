@@ -69,10 +69,12 @@ evaluation:
   benchmarks: [SPY, MDY, QQQ]
   windows: {all: null, 3y: 3, 1y: 1}
 
-# Newsfeed (site #/news): the lists worth acting on, what they hold, and what changes at each report.
-#   candidates   lists considered; each run a candidate is included only while its since-inception Sharpe
-#                beats SPY's over the same dates (shown on the page, so inclusion follows the evaluation)
-#   base/filter  a filtered list is shown with its full base list, marking the names the filter skips
+# Newsfeed (site #/news): the strategies worth acting on, what they hold, and what changes at each report.
+#   champion     each strategy's best variant (market.evaluate.champions): highest Sharpe over the dates its variants
+#                share; a filtered variant must beat the base by `champion_tie`, else the base wins
+#   inclusion    a champion enters the feed when its since-inception Sharpe is ≥ margin_in × SPY's over the same dates,
+#                and leaves below margin_out × (kept in the feed_state table); it also needs a positive half-Kelly
+#   lists        a filtered list shows its base ranking with the skipped names struck through (category_exclusions)
 #   allocation   each stock gets its list's half-Kelly (per position, from the list's closed trades); a stock
 #                on several lists gets the lowest of their half-Kellys; the total is scaled to 100% if it
 #                is larger, else the rest is held in SPY; no stock above `cap`
@@ -82,9 +84,6 @@ newsfeed:
   min_change: 0.005             # weight changes smaller than this are shown as Hold
   cap: 0.30                     # largest weight for one stock
   depth: 10                     # names shown per list (ranked)
-  candidates:
-    - {strategy: mom12si_sp500.top5, base: mom12_sp500, filter: short_interest}
-    - {strategy: rankmomiv_sp500.top5, base: rankmom_sp500, filter: iv}
-    - {strategy: laggards_mega10.top2.hold21}
-    - {strategy: emergingall_sp400.top5}   # S&P 400 Emerging Leaders stays in the Lab, not in the feed
-    - {strategy: steady_sp500.top5}
+  margin_in: 1.10               # enter: Sharpe ≥ 1.10 × SPY's over the same dates
+  margin_out: 1.00              # leave: Sharpe below SPY's
+  champion_tie: 0.05            # a filtered variant must beat its base's Sharpe by this much to be the champion

@@ -144,6 +144,28 @@ CREATE TABLE IF NOT EXISTS category_snapshots (
     PRIMARY KEY (category_id, report_date, security_id, origin)
 );
 
+-- Names a filter variant skipped from its base ranking on a report (docs/PLAN-site.md §5): pages show the base
+-- list with these struck through. Never read by the engine.
+CREATE TABLE IF NOT EXISTS category_exclusions (
+    category_id   VARCHAR NOT NULL,
+    report_date   DATE NOT NULL,
+    security_id   VARCHAR NOT NULL,
+    ticker        VARCHAR,
+    base_rank     INTEGER NOT NULL,        -- position in the base ranking, counting kept and skipped names
+    reason        VARCHAR NOT NULL,        -- the filter's reading, e.g. "heavily shorted: 7.2 days to cover"
+    origin        VARCHAR NOT NULL,
+    PRIMARY KEY (category_id, report_date, security_id, origin)
+);
+
+-- Feed membership per strategy family (hysteresis: enter at margin_in × SPY's Sharpe, leave below margin_out).
+CREATE TABLE IF NOT EXISTS feed_state (
+    family_id     VARCHAR PRIMARY KEY,
+    champion      VARCHAR,
+    in_feed       BOOLEAN NOT NULL,
+    since         DATE,
+    updated_at    TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS trades (
     strategy_id       VARCHAR NOT NULL,
     trade_id          VARCHAR NOT NULL,

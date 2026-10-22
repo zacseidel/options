@@ -24,10 +24,12 @@ import duckdb
 import pandas as pd
 
 import market.categories.catalog  # noqa: F401  (registers categories)
+from market.categories.families import FAMILIES, SECTIONS, variant
 from market.categories.registry import REGISTRY
 from market.config import config, directory
 from market.reports import export_newsfeed, export_options, export_profiles, export_smartmoney, site_lock
 from market.data import watchlists
+from market.evaluate import champions
 from market.evaluate.engine import load_strategies
 from market.research import lead_time
 from market.store.db import connect
@@ -101,23 +103,26 @@ def _write(target, payload) -> int:
 
 
 def strategy_label(strategy) -> dict:
+    """Display names: `name` is the short one ("SPY Ldrs · SI", plus "#6–10" for a lower slot), `full` the long one."""
     cat = REGISTRY[strategy.category]
+    short = variant(strategy.category).short
     slot = "all signals" if strategy.slot == "all" else (
         f"top {strategy.slot[1]}" if strategy.slot[0] == 1 else f"ranks {strategy.slot[0]}–{strategy.slot[1]}")
+    name = short if strategy.slot == "all" or strategy.slot[0] == 1 else f"{short} #{strategy.slot[0]}–{strategy.slot[1]}"
     hold = HOLD_LABELS[strategy.hold].format(**{k: str(v).upper() if k == "indicator" else v
                                                 for k, v in strategy.params.items()})
+    common = {"slot": slot, "hold": hold, "full": f"{cat.name} · {slot}", "family": variant(strategy.category).family,
+              "filter": variant(strategy.category).filter}
     if strategy.instrument == "short":
-        return {"name": f"{cat.name} · {slot} · short", "slot": slot, "hold": hold,
-                "instrument": f"short (borrow {strategy.method['borrow']:.1%}/yr)"}
+        return {**common, "name": f"{name} · short", "instrument": f"short (borrow {strategy.method['borrow']:.1%}/yr)"}
     if strategy.instrument == "overlay":
         m = strategy.method
-        hedge = f"+ {m['weight']:.0%} short {REGISTRY[m['short_category']].name}"
-        return {"name": f"{cat.name} · {slot} · {hedge}", "slot": slot, "hold": hold,
-                "instrument": f"long, {hedge} (see the two strategies for trades)"}
+        hedge = f"+ {m['weight']:.0%} short {variant(m['short_category']).short}"
+        return {**common, "name": f"{name} {hedge}", "instrument": f"long, {hedge} (see the two strategies for trades)"}
     if strategy.instrument != "stock":
-        return {"name": f"{cat.name} · {slot} · {strategy.method['label']}", "slot": slot, "hold": hold,
-                "instrument": strategy.method["label"], "options": True, "base": strategy.base}
-    return {"name": f"{cat.name} · {slot}", "slot": slot, "hold": hold, "instrument": strategy.instrument}
+        return {**common, "name": f"{name} · {strategy.method['label']}", "instrument": strategy.method["label"],
+                "options": True, "base": strategy.base}
+    return {**common, "name": name, "instrument": strategy.instrument}
 
 
 def current_tickers(con: duckdb.DuckDBPyConnection) -> dict[str, str]:
@@ -147,6 +152,10 @@ def export() -> dict:
         FROM category_snapshots WHERE origin = 'backtest' ORDER BY category_id, report_date, rank
     """).df()
     snaps["report_date"] = pd.to_datetime(snaps["report_date"]).dt.date.astype(str)
+    skipped = con.execute("SELECT category_id, report_date, security_id, ticker, base_rank, reason FROM category_exclusions "
+                          "WHERE origin = 'backtest' ORDER BY category_id, report_date, base_rank").df()
+    skipped["report_date"] = pd.to_datetime(skipped["report_date"]).dt.date.astype(str)
+    skipped_by = {c: g for c, g in skipped.groupby("category_id")}
     category_meta = []
     lead_times = lead_time.compute(con)
     order = {cat_id: i for i, cat_id in enumerate(REGISTRY)}
@@ -155,19 +164,28 @@ def export() -> dict:
         dates = sorted(frame["report_date"].unique())
         index = {d: i for i, d in enumerate(dates)}
         keys = KEY_FEATURES.get(cat_id, [])
+        filtered = variant(cat_id).filter is not None
         rows = []
         for r in frame.itertuples(index=False):
             feats = json.loads(r.features)
             rows.append([index[r.report_date], r.ticker, key_of.get(r.security_id, r.ticker), int(r.rank),
-                         _num(r.score)] + [feats.get(k) if isinstance(feats.get(k), str) else _num(feats.get(k)) for k in keys])
+                         _num(r.score)] + [feats.get(k) if isinstance(feats.get(k), str) else _num(feats.get(k)) for k in keys]
+                        + ([_num(feats.get("base_rank"))] if filtered else []))
+        sk = skipped_by.get(cat_id)
         sizes[f"categories/{cat_id}"] = _write(out_dir / "categories" / f"{cat_id}.json", {
-            "id": cat_id, "dates": dates, "fields": ["d", "ticker", "key", "rank", "score", *keys], "rows": rows,
+            "id": cat_id, "dates": dates, "fields": ["d", "ticker", "key", "rank", "score", *keys] + (["base_rank"] if filtered else []),
+            "rows": rows,
+            # Names the filter skipped: [report index, ticker, key, position in the base ranking, reason]
+            "skipped": [] if sk is None else [[index[d], t, key_of.get(sid, t), int(b), why]
+                                              for d, sid, t, b, why in zip(sk["report_date"], sk["security_id"], sk["ticker"],
+                                                                           sk["base_rank"], sk["reason"]) if d in index],
         })
         latest = frame[frame["report_date"] == dates[-1]]
         category_meta.append({
-            "id": cat_id, "name": cat.name, "group": cat.group, "universe": cat.universe,
+            "id": cat_id, "name": cat.name, "short": variant(cat_id).short, "family": variant(cat_id).family,
+            "filter": variant(cat_id).filter, "group": cat.group, "universe": cat.universe,
             "description": cat.description, "reports": len(dates), "first": dates[0], "latest": dates[-1],
-            "latest_count": int(len(latest)), "features": keys, "stage": cat.stage,
+            "latest_count": int(len(latest)), "features": keys,
             "lead_time": lead_times.get(cat_id),
         })
 
@@ -242,7 +260,9 @@ def export() -> dict:
         con, panel, all_strategies, metrics_by, navs, session_index, key_of, strategy_label))
 
     # ---------------------------------------------------------------- newsfeed
-    sizes["news"] = _write(out_dir / "news.json", export_newsfeed.build(con, panel, key_of))
+    metrics_all, nav_wide = champions.load_inputs(con, all_strategies)
+    families = champions.update_feed(con, champions.compute(con, all_strategies, metrics_all, nav_wide))
+    sizes["news"] = _write(out_dir / "news.json", export_newsfeed.build(con, panel, key_of, families))
 
     # ---------------------------------------------------------------- stocks
     first_report = min(c["first"] for c in category_meta)
@@ -296,6 +316,10 @@ def export() -> dict:
         "generated_at": datetime.now().isoformat(timespec="minutes"),
         "data_through": sessions[-1], "first_report": first_report,
         "categories": category_meta, "strategies": strategy_meta,
+        "sections": SECTIONS,
+        "families": [{"id": f.id, "name": f.name, "short": f.short, "section": f.section, "base": f.base,
+                      **{k: v for k, v in families.get(f.id, {}).items() if k != "family"}} for f in FAMILIES.values()],
+        "feed": {k: config()["newsfeed"][k] for k in ("margin_in", "margin_out", "champion_tie")},
         "benchmarks": {k.split(".", 1)[1]: v for k, v in metrics_by.items() if k.startswith("bench.")},
         "windows": list(config()["evaluation"]["windows"]),
         "stocks": stock_index,

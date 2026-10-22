@@ -78,6 +78,11 @@ let STOCKS = new Set();
 const stockLink = (key, label = key) => (STOCKS.has(key) ? h("a", { href: `#/stock/${encodeURIComponent(key)}` }, label) : h("span", {}, label));
 const stratName = (id) => META.all.strategies.find((s) => s.id === id)?.name || id;
 const catOf = (id) => META.all.categories.find((c) => c.id === id);
+const famOf = (id) => META.families.find((f) => f.id === id);
+const catName = (c) => (c ? h("span", { title: c.name }, c.short || c.name) : "");
+/** Categories grouped by the site's sections (universe), in family order. */
+const catsBySection = () => META.sections.map((sec) => [sec, META.families.filter((f) => f.section === sec)
+  .flatMap((f) => META.categories.filter((c) => c.family === f.id))]).filter(([, cats]) => cats.length);
 const windowLabel = (w) => (w === "all" ? "Since inception" : w === "since_added" ? "Since added" : w.toUpperCase());
 
 /** Sortable table. columns: [{key, label, num, render(row), sort(row), title}] */
@@ -135,6 +140,11 @@ async function categoryData(id) {
       if (!data.byDate.has(row[f.d])) data.byDate.set(row[f.d], []);
       data.byDate.get(row[f.d]).push(obj);
     }
+    data.skippedByDate = new Map();
+    for (const [d, ticker, key, base_rank, reason] of data.skipped || []) {
+      if (!data.skippedByDate.has(d)) data.skippedByDate.set(d, []);
+      data.skippedByDate.get(d).push({ ticker, key, base_rank, reason, skipped: true });
+    }
   }
   return data;
 }
@@ -153,6 +163,7 @@ function reportWithDiff(data, date, compareTo = null) {
     date: data.dates[i], prevDate: j >= 0 ? data.dates[j] : null,
     rows: rows.map((r) => ({ ...r, prevRank: prevRank.get(r.key) ?? null, isNew: j >= 0 && !prevRank.has(r.key) })),
     dropped: prev.filter((r) => !curKeys.has(r.key)),
+    skipped: data.skippedByDate?.get(i) || [],
   };
 }
 
@@ -194,25 +205,33 @@ const FEATURE_LABELS = {
   term: ["IV 30d − long", (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)} pts`)],
 };
 const TEXT_FEATURES = new Set(["dip_date", "members", "top_funds", "last_disclosed"]);
-const GROUP_ORDER = ["Momentum", "Reversion", "Congress", "Hedge funds"];
 const shortDate = (v) => (v ? new Date(v + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—");
 const quarterOf = (d) => `Q${Math.floor((+d.slice(5, 7) - 1) / 3) + 1} ${d.slice(0, 4)}`;
-const groups = () => [...new Set(META.categories.map((c) => c.group))].sort((a, b) => GROUP_ORDER.indexOf(a) - GROUP_ORDER.indexOf(b));
+
+/** A report's rows plus, for a filtered list, the names its filter skipped (in base-ranking order). */
+function withSkipped(report, limit) {
+  const rows = limit ? report.rows.slice(0, limit) : report.rows;
+  if (!report.skipped?.length || !rows.length || rows[0].base_rank == null) return rows;
+  const last = Math.max(...rows.map((r) => r.base_rank));
+  return [...rows, ...report.skipped.filter((x) => x.base_rank <= last)];
+}
+
+const struck = (r, content) => (r.skipped ? h("s", { title: r.reason }, content) : content);
 
 function reportTable(cat, report, { compact = false, limit } = {}) {
   const hasPrev = !!report.prevDate;
-  const rows = limit ? report.rows.slice(0, limit) : report.rows;
+  const rows = withSkipped(report, limit);
   const cols = [
-    { key: "rank", label: "#", num: true, render: (r) => r.rank },
-    { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => stockLink(r.key, r.ticker) },
+    { key: "rank", label: "#", num: true, sort: (r) => r.base_rank ?? r.rank, render: (r) => (r.skipped ? "—" : r.rank) },
+    { key: "ticker", label: "Ticker", cls: () => "ticker", render: (r) => struck(r, stockLink(r.key, r.ticker)) },
     ...cat.features.slice(0, compact ? 1 : 4).map((f) => ({
       key: f, label: FEATURE_LABELS[f]?.[0] || f, num: !TEXT_FEATURES.has(f),
       cls: (r) => (["return_1w", "pct_vs_sma200", "return_since"].includes(f) ? cls(r[f]) : TEXT_FEATURES.has(f) && f !== "dip_date" ? "text-col" : ""),
-      render: (r) => (FEATURE_LABELS[f]?.[1] || String)(r[f]),
+      render: (r) => (r.skipped ? "" : (FEATURE_LABELS[f]?.[1] || String)(r[f])),
     })),
-    { key: "chg", label: "vs prior", nosort: true, render: (r) => changeBadge(r, hasPrev) },
+    { key: "chg", label: "vs prior", nosort: true, render: (r) => (r.skipped ? h("span", { class: "small muted" }, `skipped: ${r.reason}`) : changeBadge(r, hasPrev)) },
   ];
-  return table(cols, rows, { sortKey: "rank", desc: false, compact: true });
+  return table(cols, rows, { sortKey: "rank", desc: false, compact: true, rowClass: (r) => (r.skipped ? "skipped" : null) });
 }
 
 function droppedLine(report) {
@@ -222,58 +241,104 @@ function droppedLine(report) {
 
 // ------------------------------------------------------------------ pages
 async function overview(root) {
-  const head = h("div", { class: "page-head" },
-    h("div", {}, h("h1", {}, "Strategy evaluation"),
-      h("p", { class: "lede" }, `Every category × method, evaluated on the same rules since ${fmtDate(META.first_report)}. Total return with dividends, equal weight per position, vs. SPY.`)),
-    h("div", { class: "muted small" }, `Data through ${fmtDate(META.data_through)}`));
-  const controls = h("div", { class: "controls" });
-  const body = h("div");
-  root.append(head, controls, body);
-
-  const draw = () => {
-    body.textContent = "";
-    const w = state.window;
-    const rows = META.strategies.filter((s) => s.visible && !s.options).map((s) => ({ ...s, m: s.metrics[w] || {} }));
-    const bench = Object.entries(META.benchmarks).map(([t, m]) => ({ id: `bench.${t}`, name: `${t} (benchmark)`, bench: true, m: m[w] || {}, holdings: [] }));
-    const cols = [
-      { key: "name", label: "Strategy", sort: (r) => r.name, cls: () => "name-col", render: (r) => r.bench ? r.name : h("a", { href: `#/strategy/${r.id}` }, r.name) },
-      { key: "spark", label: "", nosort: true, hideNarrow: true, render: (r) => r.spark ? sparkline(r.spark, { color: css("--series-1") }) : "" },
-      { key: "cagr", label: "CAGR", num: true, sort: (r) => r.m.cagr, cls: (r) => cls(r.m.cagr), render: (r) => pct(r.m.cagr) },
-      { key: "excess", label: "vs SPY", num: true, title: "CAGR minus SPY's CAGR over the same window", sort: (r) => r.m.excess_cagr, cls: (r) => cls(r.m.excess_cagr), render: (r) => pct(r.m.excess_cagr, 1, true) },
-      { key: "total", label: "Total", num: true, sort: (r) => r.m.total_return, render: (r) => pct(r.m.total_return, 0) },
-      { key: "sharpe", label: "Sharpe", num: true, sort: (r) => r.m.sharpe, render: (r) => num(r.m.sharpe) },
-      { key: "dd", label: "Max DD", num: true, sort: (r) => r.m.max_drawdown, render: (r) => pct(r.m.max_drawdown, 0) },
-      { key: "win", label: "Win %", num: true, sort: (r) => r.metrics?.all?.win_rate, render: (r) => r.bench ? "" : pct(r.metrics.all.win_rate, 0) },
-      { key: "trades", label: "Trades", num: true, sort: (r) => r.metrics?.all?.closed_trades, render: (r) => r.bench ? "" : r.metrics.all.closed_trades },
-      { key: "hold", label: "Holding now", nosort: true, cls: () => "nowrap", render: (r) => h("span", {}, (r.holdings || []).slice(0, 6).map((k) => h("span", { class: "chip link" }, stockLink(k)))) },
-    ];
-    body.appendChild(table(cols, [...rows, ...bench], { sortKey: "cagr", rowClass: (r) => (r.bench ? "bench" : null) }));
-    body.appendChild(h("p", { class: "muted small" }, w === "all"
-      ? "Since inception: each strategy from its category's first report; vs SPY over the same dates."
-      : `Trailing ${w.toUpperCase()} window.`));
-  };
-  controls.appendChild(seg(META.windows.map((w) => [w, w === "all" ? "Since inception" : w.toUpperCase()]), state.window, (v) => { state.window = v; draw(); }));
-  draw();
-
-  // Latest report, one card per category, with changes vs the previous report.
-  const latest = META.categories.reduce((a, c) => (c.latest > a ? c.latest : a), "");
-  root.appendChild(h("h2", {}, h("a", { href: `#/report/${latest}` }, `Latest report · ${fmtDate(latest)}`)));
-  const radar = await smartMoneyRadar(latest);
-  for (const g of groups()) {
-    root.appendChild(h("h3", { class: "group-head" }, g));
+  root.appendChild(h("div", { class: "page-head" },
+    h("div", {}, h("h1", {}, "Where things stand"),
+      h("p", { class: "lede" }, `Every strategy's best variant against SPY over the same dates. Strategies at ${num(META.feed.margin_in)}× SPY's Sharpe or better are followed on the News page; they stay until they fall below SPY's.`)),
+    h("div", { class: "muted small" }, `Data through ${fmtDate(META.data_through)}`)));
+  const news = await load("news.json");
+  if (news?.reports?.length) root.appendChild(newsHeadline(news));
+  root.appendChild(h("h2", {}, "Scoreboard"));
+  root.appendChild(scoreboard());
+  if (news?.lists?.length) {
+    root.appendChild(h("h2", {}, h("a", { href: "#/news" }, `Followed lists · ${fmtDate(news.latest_report)}`)));
     const grid = h("div", { class: "grid cols-3" });
     root.appendChild(grid);
-    for (const cat of META.categories.filter((c) => c.group === g)) {
-      const report = reportWithDiff(await categoryData(cat.id), latest);
-      if (!report) continue;
-      const flagged = ["Congress", "Hedge funds"].includes(g) ? [] : report.rows.filter((r) => radar.has(r.key));
-      grid.appendChild(h("div", { class: "card report-card" },
-        h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name), h("span", { class: "muted small" }, cat.group)),
-        reportTable(cat, report, { compact: true, limit: 10 }),
-        droppedLine(report),
-        flagged.length ? h("div", { class: "dropped" }, "Also on smart-money lists: ", flagged.map((r, i) => [i ? ", " : "", stockLink(r.key, r.ticker), ` (${[...radar.get(r.key)].join(", ")})`])) : null));
-    }
+    for (const L of news.lists) grid.appendChild(listCard(L, { compact: true }));
   }
+}
+
+const ACTION_ORDER = ["Buy", "Add", "Trim", "Sell", "Hold"];
+
+function reportWhen(rep) {
+  return rep.upcoming ? h("span", { class: "badge new" }, `for the open on ${fmtDate(rep.date)}`)
+    : rep.filled ? h("span", { class: "muted small" }, `filled at the open on ${fmtDate(rep.date)}`) : h("span", { class: "badge flat" }, "pending");
+}
+
+/** The latest feed report and the allocation after it, in one card. */
+function newsHeadline(d) {
+  const rep = d.reports[0];
+  const moves = rep.actions.filter((x) => x.action !== "Hold");
+  const counts = ["Buy", "Add", "Trim", "Sell"].map((k) => [k, rep.actions.filter((x) => x.action === k).length]).filter(([, n]) => n);
+  const alloc = d.allocation;
+  return h("div", { class: "card headline" },
+    h("h3", {}, h("a", { href: "#/news" }, `Latest report · ${fmtDate(rep.date)}`), reportWhen(rep),
+      h("span", { class: "muted small" }, counts.map(([k, n]) => `${n} ${k.toLowerCase()}`).join(" · ") || "no changes")),
+    moves.length ? h("div", { class: "moves" }, moves.map((x) => h("span", { class: "move", title: [...x.in, ...x.out].map((y) => y.why).join("; ") },
+      h("span", { class: `badge ${ACTION_CLASS[x.action]}` }, x.action), " ", stockLink(x.key), h("span", { class: "muted small" }, ` ${pct(x.before, 0)} → ${pct(x.after, 0)}`)))) : null,
+    h("div", { class: "alloc" }, h("span", { class: "muted small" }, "Allocation: "),
+      alloc.rows.map((r) => h("span", { class: "chip link", title: r.explain }, stockLink(r.key), h("span", { class: "muted" }, ` ${pct(r.weight, 1)}`))),
+      alloc.spy > 0.0005 ? h("span", { class: "chip" }, `SPY ${pct(alloc.spy, 1)}`) : null),
+    h("div", { class: "muted small" }, h("a", { href: "#/news" }, "Full newsfeed, reasons and history →")));
+}
+
+/** Sharpe as a multiple of SPY's, with a bar marking the entry bar. */
+function ratioCell(ratio) {
+  if (ratio == null) return "—";
+  const scale = 2.5;
+  const w = Math.max(0, Math.min(1, ratio / scale)) * 100;
+  return h("span", { class: "ratio", title: `${num(ratio)}× SPY's Sharpe; enters the feed at ${num(META.feed.margin_in)}×` },
+    h("span", { class: `ratio-bar ${ratio >= META.feed.margin_in ? "up" : ratio >= 1 ? "mid" : "low"}` },
+      h("span", { class: "fill", style: `width:${w}%` }), h("span", { class: "tick", style: `left:${(META.feed.margin_in / scale) * 100}%` })),
+    `${num(ratio)}×`);
+}
+
+const strategyById = (id) => META.all.strategies.find((s) => s.id === id);
+
+/** One row per strategy, by section: its best variant against SPY over the same dates. */
+function scoreboard() {
+  const box = h("div");
+  for (const sec of META.sections) {
+    const fams = META.families.filter((f) => f.section === sec);
+    if (!fams.length) continue;
+    const rows = fams.map((f) => ({ f, s: strategyById(f.champion), m: strategyById(f.champion)?.metrics.all || {} }));
+    box.append(h("h3", { class: "group-head" }, sec), table([
+      { key: "fam", label: "Strategy", sort: (r) => r.f.short, cls: () => "name-col", render: (r) => h("a", { href: `#/strategies/${r.f.id}`, title: r.f.name }, r.f.short) },
+      { key: "best", label: "Best variant", sort: (r) => r.s?.name, render: (r) => (r.s ? h("a", { href: `#/strategy/${r.s.id}`, title: r.s.full }, r.s.name) : h("span", { class: "muted small" }, "no variant the feed can hold")) },
+      { key: "sharpe", label: "Sharpe", num: true, sort: (r) => r.m.sharpe, render: (r) => num(r.m.sharpe) },
+      { key: "spy", label: "SPY Sharpe", num: true, title: "SPY's Sharpe over the same dates", sort: (r) => r.m.benchmark_sharpe, render: (r) => num(r.m.benchmark_sharpe) },
+      { key: "ratio", label: "× SPY", num: true, sort: (r) => r.f.ratio, render: (r) => ratioCell(r.f.ratio) },
+      { key: "cagr", label: "CAGR", num: true, hideNarrow: true, sort: (r) => r.m.cagr, cls: (r) => cls(r.m.excess_cagr), render: (r) => pct(r.m.cagr) },
+      { key: "dd", label: "Max DD", num: true, hideNarrow: true, sort: (r) => r.m.max_drawdown, render: (r) => pct(r.m.max_drawdown, 0) },
+      { key: "since", label: "Since", hideNarrow: true, sort: (r) => r.m.start, render: (r) => (r.m.start ? shortYear(r.m.start) : "—") },
+      { key: "feed", label: "News", sort: (r) => (r.f.in_feed ? 1 : 0), render: (r) => (r.f.in_feed ? h("span", { class: "badge up", title: r.f.since ? `followed since ${fmtDate(r.f.since)}` : "" }, "Followed") : "") },
+    ], rows, { sortKey: "ratio", compact: true }));
+  }
+  box.appendChild(h("p", { class: "muted small" }, `Sharpe since each variant's first report; SPY over exactly the same dates. The best variant is chosen on the dates all of a strategy's variants share (a filter must beat the plain list by ${num(META.feed.champion_tie)}).`));
+  return box;
+}
+
+const shortYear = (d) => new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", year: "numeric" });
+
+const STATUS = { held: ["Held", "up"], filtered: ["Skipped", "down"], next: ["Next in line", "flat"] };
+
+/** A followed list (from news.json): held names, next in line, and names the filter skipped, struck through. */
+function listCard(L, { compact = false } = {}) {
+  const cols = [
+    { key: "rank", label: "#", num: true, sort: (r) => r.base_rank ?? r.rank ?? 99, render: (r) => r.rank ?? "—" },
+    { key: "key", label: "Stock", sort: (r) => r.key, render: (r) => h("span", {}, r.status === "filtered" ? h("s", { title: r.reason }, stockLink(r.key)) : stockLink(r.key),
+        r.also_on.length ? h("span", { class: "badge new", style: "margin-left:4px", title: `Also on ${r.also_on.join(", ")}` }, `+${r.also_on.length}`) : "") },
+    ...(compact ? [] : [{ key: "status", label: "Status", sort: (r) => r.status, render: (r) => h("span", { class: `badge ${STATUS[r.status][1]}`, title: r.reason || "" }, STATUS[r.status][0]) },
+      { key: "added", label: "On list since", sort: (r) => r.added, cls: () => "nowrap", render: (r) => (r.added ? `${fmtDate(r.added)} (${r.days ?? 0}d)` : "—") }]),
+    { key: "gain", label: compact ? "Gain" : "Gain since", num: true, sort: (r) => r.gain, cls: (r) => cls(r.gain), render: (r) => pct(r.gain, 1, true) },
+    { key: "weight", label: "Weight", num: true, sort: (r) => r.weight, render: (r) => (r.weight == null ? "" : pct(r.weight, 1)) },
+    ...(compact ? [] : [{ key: "why", label: "Note", nosort: true, render: (r) => h("span", { class: "small" }, r.status === "filtered" ? `skipped: ${r.reason}` : r.note || r.reason || r.feature) }]),
+  ];
+  const rows = compact ? L.rows.filter((r) => r.status !== "next" || (r.rank ?? 99) <= (L.slot_end ?? 5) + 2) : L.rows;
+  return h("div", { class: "card report-card" },
+    h("h3", {}, h("a", { href: `#/strategy/${L.id}` }, L.name), h("span", { class: "muted small" }, `half-Kelly ${pct(L.half_kelly, 1)}`)),
+    L.filter ? h("p", { class: "muted small", style: "margin:0 0 6px" }, `In base-list order: names the ${L.filter} filter skips are struck through and the next names move up.`) : null,
+    table(cols, rows, { sortKey: "rank", desc: false, compact: true, rowClass: (r) => (r.status === "filtered" ? "skipped" : compact && r.status === "next" ? "dim" : null) }),
+    compact ? h("div", { class: "muted small" }, "Weighted rows are held; the rest are next in line.") : null);
 }
 
 /** key → names of the smart-money lists it is on, as of a report date. */
@@ -283,7 +348,7 @@ async function smartMoneyRadar(date) {
     const report = reportWithDiff(await categoryData(cat.id), date);
     for (const r of report?.rows || []) {
       if (!radar.has(r.key)) radar.set(r.key, new Set());
-      radar.get(r.key).add(cat.name);
+      radar.get(r.key).add(cat.short);
     }
   }
   return radar;
@@ -311,20 +376,18 @@ async function reports(root, date, compareTo) {
   root.appendChild(h("div", { class: "report-layout" }, list, main));
   list.querySelector(".here")?.scrollIntoView({ block: "center" });
   const [congress, hedge] = await Promise.all([congressData(), hedgeData()]);
-  for (const g of groups()) {
+  for (const [g, cats] of catsBySection()) {
     main.appendChild(h("h2", { class: "group-head first" }, g));
     const grid = h("div", { class: "grid cols-2" });
     main.appendChild(grid);
-    META.categories.forEach((cat, k) => {
-      if (cat.group !== g) return;
-      const report = reportWithDiff(all[k], date, compareTo);
+    cats.forEach((cat) => {
+      const report = reportWithDiff(all[META.categories.indexOf(cat)], date, compareTo);
       grid.appendChild(h("div", { class: "card report-card" },
-        h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name),
+        h("h3", {}, h("a", { href: `#/category/${cat.id}` }, catName(cat)),
           h("span", { class: "muted small" }, report ? `vs ${report.prevDate ? fmtDate(report.prevDate) : "—"}` : "")),
         report && report.rows.length ? [reportTable(cat, report), droppedLine(report)] : h("div", { class: "empty" }, report ? "Nothing listed on this date." : "No report yet on this date.")));
     });
-    if (g === "Congress" && !compareTo) grid.appendChild(congressDigest(congress, date, { limit: 8 }));
-    if (g === "Hedge funds" && !compareTo) grid.appendChild(hedgeDigest(hedge, date, { limit: 8 }));
+    if (g === "Smart money" && !compareTo) grid.append(congressDigest(congress, date, { limit: 8 }), hedgeDigest(hedge, date, { limit: 8 }));
   }
 }
 
@@ -494,7 +557,7 @@ async function smartPage(root, kind, date) {
   for (const cat of cats) {
     const report = reportWithDiff(await categoryData(cat.id), d);
     grid.appendChild(h("div", { class: "card report-card" },
-      h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name), h("span", { class: "muted small" }, report?.prevDate ? `vs ${shortDate(report.prevDate)}` : "")),
+      h("h3", {}, h("a", { href: `#/category/${cat.id}` }, catName(cat)), h("span", { class: "muted small" }, report?.prevDate ? `vs ${shortDate(report.prevDate)}` : "")),
       report && report.rows.length ? [reportTable(cat, report), droppedLine(report)] : h("div", { class: "empty" }, "Nothing listed on this date.")));
   }
 
@@ -658,12 +721,11 @@ async function strategyPage(root, id) {
   const cat = catOf(s.category);
   const dates = sessions.slice(s.start, s.start + s.nav.length);
   root.appendChild(h("div", { class: "page-head" },
-    h("div", {}, h("div", { class: "muted small" }, s.stage === "lab"
-        ? [h("a", { href: "#/lab" }, "Lab"), " / ", h("a", { href: `#/category/${cat.id}` }, cat.name), s.added ? ` · added ${fmtDate(s.added)}` : ""]
-        : s.options
+    h("div", {}, h("div", { class: "muted small" }, s.options
         ? [h("a", { href: "#/options" }, "Options"), " / ", h("a", { href: `#/strategy/${s.base}` }, stratName(s.base))]
-        : [h("a", { href: "#/strategies" }, "Strategies"), " / ", h("a", { href: `#/category/${cat.id}` }, cat.name)]),
-      h("h1", {}, s.name),
+        : [h("a", { href: "#/strategies" }, "Strategies"), " / ", h("a", { href: `#/strategies/${s.family}` }, famOf(s.family)?.short || s.family),
+           s.added ? ` · rules frozen ${fmtDate(s.added)}` : ""]),
+      h("h1", {}, s.name, h("span", { class: "muted", style: "font-weight:400;font-size:0.6em" }, ` ${s.full}`)),
       h("p", { class: "lede" }, s.options
         ? `${cat.description} Take the ${s.slot}; ${s.hold}. ${s.instrument} on each holding, opened and closed with the stock (option history only, about 2 years).`
         : `${cat.description} Take the ${s.slot}; ${s.hold}; instrument: ${s.instrument}.`))));
@@ -681,7 +743,7 @@ async function strategyPage(root, id) {
     tiles.append(
       tile("CAGR", pct(m.cagr), `SPY ${pct(m.benchmark_cagr)}`, cls(m.excess_cagr)),
       tile("Total return", pct(m.total_return, 0), `SPY ${pct(m.benchmark_total_return, 0)}`),
-      tile("Sharpe", num(m.sharpe), `Sortino ${num(m.sortino)}`),
+      tile("Sharpe", num(m.sharpe), `SPY ${num(m.benchmark_sharpe)} same dates · Sortino ${num(m.sortino)}`, cls(m.sharpe - m.benchmark_sharpe)),
       tile("Max drawdown", pct(m.max_drawdown, 0), m.max_drawdown_trough ? `trough ${fmtDate(m.max_drawdown_trough)}` : ""),
       tile("Beta vs SPY", num(m.beta), `alpha ${pct(m.alpha, 1, true)} · corr ${num(m.correlation)}`),
       tile("Win rate", pct(all.win_rate, 0), `${all.closed_trades} closed · ${all.open_trades} open`),
@@ -724,6 +786,15 @@ async function strategyPage(root, id) {
     seg([["nav", "Total return"], ["nav_price", "Price only"]], state.basis, (v) => { state.basis = v; draw(); }),
     seg([[true, "Log scale"], [false, "Linear"]], state.log, (v) => { state.log = v; draw(); }));
   draw();
+
+  if (!s.options && cat) {
+    const data = await categoryData(cat.id);
+    const report = reportWithDiff(data, data.dates[data.dates.length - 1]);
+    if (report) root.append(h("h2", {}, `The list · ${fmtDate(report.date)}`),
+      cat.filter ? h("p", { class: "muted small" }, `In base-ranking order; names the ${cat.filter} filter skips are struck through.`) : null,
+      h("div", { class: "card" }, reportTable(cat, report, { limit: 15 }), droppedLine(report),
+        h("div", { class: "muted small", style: "margin-top:6px" }, h("a", { href: `#/category/${cat.id}` }, "Every report, membership and lead time →"))));
+  }
 
   const f = Object.fromEntries(s.trade_fields.map((n, i) => [n, i]));
   const trades = s.trades.map((t, n) => ({ ...Object.fromEntries(Object.entries(f).map(([k, i]) => [k, t[i]])), n }));
@@ -911,10 +982,59 @@ async function optionsPage(root) {
   }
 }
 
-async function strategiesPage(root) {
+async function strategiesPage(root, focus) {
   root.appendChild(h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Strategies"),
-    h("p", { class: "lede" }, "Strategy = category × slot × method. Edit strategies.yaml to add variants; hidden variants keep being evaluated."))));
-  await overview(root.appendChild(h("div")));
+    h("p", { class: "lede" }, "Every strategy we track, by universe. A strategy's variants — the plain list, the list with a filter, or another ranking of the same idea — " +
+      `are compared on the dates they all have; ★ marks the best (a filter must beat the plain list by ${num(META.feed.champion_tie)}). ` +
+      `Strategies whose best variant reaches ${num(META.feed.margin_in)}× SPY's Sharpe are followed on the News page.`)),
+    h("div", { class: "muted small" }, `Data through ${fmtDate(META.data_through)}`)));
+  const controls = h("div", { class: "controls" });
+  const body = h("div");
+  root.append(controls, body);
+  const draw = () => {
+    body.textContent = "";
+    const w = state.window;
+    for (const sec of META.sections) {
+      const fams = META.families.filter((f) => f.section === sec && META.strategies.some((s) => s.family === f.id && !s.options));
+      if (!fams.length) continue;
+      body.appendChild(h("h2", { class: "group-head" }, sec));
+      for (const f of fams) body.appendChild(familyCard(f, w));
+    }
+    body.appendChild(h("p", { class: "muted small" }, w === "all"
+      ? "Since inception: each variant from its first report; SPY's Sharpe and CAGR over exactly the same dates."
+      : `Trailing ${w.toUpperCase()} window; SPY over the same window. Variants with less history than the window are left blank.`));
+    if (focus) document.getElementById(`fam-${focus}`)?.scrollIntoView({ block: "start" });
+  };
+  controls.appendChild(seg(META.windows.map((w) => [w, windowLabel(w)]), state.window, (v) => { state.window = v; focus = null; draw(); }));
+  draw();
+}
+
+function familyCard(f, w) {
+  const common = new Map((f.variants || []).map((v) => [v.id, v.common_sharpe]));
+  const rows = META.strategies.filter((s) => s.family === f.id && !s.options).map((s) => ({ ...s, m: s.metrics[w] || {} }));
+  rows.sort((a, b) => (b.id === f.champion) - (a.id === f.champion) || (common.get(b.id) ?? -9) - (common.get(a.id) ?? -9) || (b.m.sharpe ?? -9) - (a.m.sharpe ?? -9));
+  const champ = rows.find((r) => r.id === f.champion);
+  return h("div", { class: "card family", id: `fam-${f.id}` },
+    h("h3", {}, h("span", { title: f.name }, f.short), h("span", { class: "muted small" }, f.name),
+      f.in_feed ? h("span", { class: "badge up", title: f.since ? `followed since ${fmtDate(f.since)}` : "" }, "Followed on News") : null),
+    champ ? h("p", { class: "muted small", style: "margin:0 0 6px" },
+      `Best: ${champ.name} — ${f.ratio != null ? `${num(f.ratio)}× SPY's Sharpe since ${shortYear(champ.metrics.all.start)}` : ""}` +
+      (common.size > 1 && f.common_start ? `; variants compared from ${fmtDate(f.common_start)}` : "")) : null,
+    table([
+      { key: "name", label: "Variant", sort: (r) => r.name, cls: () => "name-col", render: (r) => h("span", {}, r.id === f.champion ? h("span", { class: "star", title: "Best variant" }, "★ ") : "",
+          h("a", { href: `#/strategy/${r.id}`, title: `${r.full} · ${r.hold}` }, r.name)) },
+      { key: "common", label: "Sharpe, shared dates", num: true, title: "Sharpe over the dates all of this strategy's eligible variants have", sort: (r) => common.get(r.id), render: (r) => num(common.get(r.id)) },
+      { key: "sharpe", label: "Sharpe", num: true, sort: (r) => r.m.sharpe, render: (r) => num(r.m.sharpe) },
+      { key: "spy", label: "SPY Sharpe", num: true, title: "SPY's Sharpe over the same dates", sort: (r) => r.m.benchmark_sharpe, render: (r) => num(r.m.benchmark_sharpe) },
+      { key: "ratio", label: "× SPY", num: true, sort: (r) => (r.m.benchmark_sharpe > 0 ? r.m.sharpe / r.m.benchmark_sharpe : null), render: (r) => (r.m.benchmark_sharpe > 0 && r.m.sharpe != null ? ratioCell(r.m.sharpe / r.m.benchmark_sharpe) : "—") },
+      { key: "cagr", label: "CAGR", num: true, sort: (r) => r.m.cagr, cls: (r) => cls(r.m.excess_cagr), render: (r) => pct(r.m.cagr) },
+      { key: "excess", label: "vs SPY", num: true, hideNarrow: true, title: "CAGR minus SPY's over the same dates", sort: (r) => r.m.excess_cagr, cls: (r) => cls(r.m.excess_cagr), render: (r) => pct(r.m.excess_cagr, 1, true) },
+      { key: "dd", label: "Max DD", num: true, hideNarrow: true, sort: (r) => r.m.max_drawdown, render: (r) => pct(r.m.max_drawdown, 0) },
+      { key: "hk", label: "Half-Kelly", num: true, hideNarrow: true, sort: (r) => r.metrics.all?.half_kelly, render: (r) => pct(r.metrics.all?.half_kelly, 0) },
+      { key: "since", label: "Since", hideNarrow: true, sort: (r) => r.start, render: (r) => shortYear(r.start) },
+      { key: "added", label: "Rules frozen", hideNarrow: true, title: "Results after this date are out of sample", sort: (r) => r.added, render: (r) => (r.added ? fmtDate(r.added) : "") },
+      { key: "hold", label: "Holding now", nosort: true, hideNarrow: true, cls: () => "nowrap", render: (r) => h("span", {}, (r.holdings || []).slice(0, 5).map((k) => h("span", { class: "chip link" }, stockLink(k)))) },
+    ], rows, { sortKey: null, compact: true, rowClass: (r) => (r.id === f.champion ? "champion" : null) }));
 }
 
 async function categoryPage(root, id) {
@@ -923,11 +1043,13 @@ async function categoryPage(root, id) {
   const data = await categoryData(id);
   const latest = reportWithDiff(data, data.dates[data.dates.length - 1]);
   root.appendChild(h("div", { class: "page-head" }, h("div", {},
-    h("div", { class: "muted small" }, h("a", { href: cat.stage === "lab" ? "#/lab" : "#/categories" }, cat.stage === "lab" ? "Lab" : "Categories"), " / ", cat.group),
-    h("h1", {}, cat.name), h("p", { class: "lede" }, cat.description),
+    h("div", { class: "muted small" }, h("a", { href: "#/strategies" }, "Strategies"), " / ", h("a", { href: `#/strategies/${cat.family}` }, famOf(cat.family)?.short || cat.family), " / list"),
+    h("h1", {}, cat.short, h("span", { class: "muted", style: "font-weight:400;font-size:0.6em" }, ` ${cat.name}`)), h("p", { class: "lede" }, cat.description),
     h("p", { class: "muted small" }, `${cat.reports} reports since ${fmtDate(cat.first)} · universe ${cat.universe}`),
     leadTimeLine(cat))));
-  root.append(h("h2", {}, `Latest · ${fmtDate(latest.date)}`), reportTable(cat, latest), droppedLine(latest));
+  root.append(h("h2", {}, `Latest · ${fmtDate(latest.date)}`),
+    cat.filter ? h("p", { class: "muted small" }, `In base-ranking order; names the ${cat.filter} filter skips are struck through.`) : null,
+    reportTable(cat, latest), droppedLine(latest));
 
   // Membership over the last 40 reports: who was listed, at what rank.
   const recent = data.dates.slice(-40);
@@ -952,30 +1074,13 @@ async function categoryPage(root, id) {
     h("div", { class: "card" }, heat));
 
   const strategies = META.all.strategies.filter((s) => s.category === id && !s.options);
-  root.append(h("h2", {}, "Strategies on this category"), table([
+  root.append(h("h2", {}, "Strategies on this list"), table([
     { key: "name", label: "Strategy", render: (s) => h("a", { href: `#/strategy/${s.id}` }, s.name) },
     { key: "hold", label: "Method", render: (s) => `${s.instrument}, ${s.hold}` },
     { key: "cagr", label: "CAGR", num: true, sort: (s) => s.metrics.all.cagr, cls: (s) => cls(s.metrics.all.cagr), render: (s) => pct(s.metrics.all.cagr) },
     { key: "sharpe", label: "Sharpe", num: true, sort: (s) => s.metrics.all.sharpe, render: (s) => num(s.metrics.all.sharpe) },
     { key: "dd", label: "Max DD", num: true, sort: (s) => s.metrics.all.max_drawdown, render: (s) => pct(s.metrics.all.max_drawdown, 0) },
   ], strategies, { sortKey: "cagr" }));
-}
-
-async function categoriesPage(root) {
-  root.appendChild(h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Categories"),
-    h("p", { class: "lede" }, "Ranked lists computed for every report date from point-in-time data. Options methods come next."))));
-  const groups = [...new Set(META.categories.map((c) => c.group))];
-  for (const g of groups) {
-    root.appendChild(h("h2", {}, g));
-    const grid = h("div", { class: "grid cols-2" });
-    for (const c of META.categories.filter((x) => x.group === g)) {
-      const strategies = META.strategies.filter((s) => s.category === c.id && !s.options);
-      grid.appendChild(h("div", { class: "card" }, h("h3", {}, h("a", { href: `#/category/${c.id}` }, c.name)),
-        h("p", { class: "ink2", style: "margin:0 0 8px" }, c.description),
-        h("div", { class: "muted small" }, `${c.reports} reports · since ${fmtDate(c.first)} · ${strategies.length} strategies`)));
-    }
-    root.appendChild(grid);
-  }
 }
 
 async function stockPage(root, key) {
@@ -1002,9 +1107,9 @@ async function stockPage(root, key) {
   root.appendChild(chartBox);
   lineChart(holder, { dates, series: [{ name: s.ticker, values: s.close, color: css("--series-1") }], height: 300, markers, format: (v) => (v > 0 && v < 10 ? v.toFixed(2) : v.toFixed(0)) });
 
-  const cats = Object.entries(s.categories).map(([id, apps]) => ({ id, name: catOf(id)?.name || id, n: apps.length, first: apps[0][0], last: apps[apps.length - 1][0], best: Math.min(...apps.map((a) => a[1])) }));
-  root.append(h("h2", {}, "Category history"), cats.length ? table([
-    { key: "name", label: "Category", render: (r) => h("a", { href: `#/category/${r.id}` }, r.name) },
+  const cats = Object.entries(s.categories).map(([id, apps]) => ({ id, name: catOf(id)?.short || id, n: apps.length, first: apps[0][0], last: apps[apps.length - 1][0], best: Math.min(...apps.map((a) => a[1])) }));
+  root.append(h("h2", {}, "List history"), cats.length ? table([
+    { key: "name", label: "List", render: (r) => h("a", { href: `#/category/${r.id}`, title: catOf(r.id)?.name }, r.name) },
     { key: "n", label: "Reports listed", num: true }, { key: "best", label: "Best rank", num: true },
     { key: "first", label: "First", render: (r) => fmtDate(r.first) }, { key: "last", label: "Most recent", render: (r) => fmtDate(r.last) },
   ], cats, { sortKey: "last" }) : h("p", { class: "empty" }, "Not listed in any category (watchlist name)."));
@@ -1057,8 +1162,12 @@ function methodologyPage(root) {
     p("Daily bars from Massive (Polygon) grouped-daily for every security that has been an S&P 500 or S&P 400 member since late 2021, plus watchlists and benchmarks. Prices are stored unadjusted and split-adjusted on read; total return reinvests cash dividends on the ex-date."),
     p("Index membership is rebuilt from Wikipedia's change history and matched to permanent security ids (FIGI), so renames (FB→META) and reused tickers (BNY, INFO, COR) map to the right company. The S&P 400 history is the noisier of the two."),
     p("Megacap cohorts rank by point-in-time company market cap (quarterly anchors carried forward by price) in place of index weight; share classes of one company (GOOG/GOOGL) count once."),
+    h("h2", {}, "Strategies, variants and the News page"),
+    p("A strategy is one idea on one universe (SPY = the S&P 500, MDY = the S&P 400): SPY Leaders, SPY Rank Momentum, MDY Fundamentals and so on. Its variants are the plain list, the list with one filter (short interest, IV, stall, RSI) or another ranking of the same idea. A filtered variant ranks exactly like its base and skips the names the filter flags; those names are shown struck through, with the filter's reading."),
+    p(`Every variant is evaluated the same way. The best variant of each strategy has the highest Sharpe over the dates all its variants share; a filter must beat the plain list by ${num(META.feed.champion_tie)} or the plain list is kept. A best variant is followed on the News page once its Sharpe since inception is at least ${num(META.feed.margin_in)}× SPY's over the same dates, and until it falls below ${num(META.feed.margin_out)}×. Each variant's rules are frozen on its "rules frozen" date; results after it are out of sample.`),
+    p("Research behind the newer variants (option flow, fundamentals, earnings, insiders, corporate actions, steady leaders, short interest, shorts, convergence) is in the project's docs/research reports; ideas that showed no benefit were dropped there."),
     h("h2", {}, "Reports and signals"),
-    p("Every Tuesday and Friday a report is computed from data through the prior session's close. Lists use only data available at that time. Report pages show changes against the previous report, or any earlier one."),
+    p("Every Tuesday and Friday a report is computed from data through the prior session's close (Monday's and Thursday's), the evening before, so it is ready before the open. Lists use only data available at that time. Report pages show changes against the previous report, or any earlier one. Index membership is checked against Wikipedia on every daily run; Congress disclosures and 13F filings are checked daily."),
     h("h2", {}, "Execution and portfolios"),
     p("Entries and report-driven exits fill at the session's VWAP on the report date (reports publish before the open). Price-indicator exits are decided on a completed close and fill the next session. Positions are equal-weighted, rebalanced only on days a trade opens or closes, and marked at the close. Idle cash earns nothing. No fees or slippage."),
     h("h2", {}, "Metrics"),
@@ -1081,60 +1190,17 @@ function methodologyPage(root) {
     p("Both feeds are read from the smartmoney ledgers (fetching still runs through its code); every score here is recomputed point-in-time from the raw filings."));
 }
 
-// ------------------------------------------------------------------ lab
-/** Lab categories and strategies (new, on trial) are kept off every other list; META.all has everything. */
-function splitLab(meta) {
+// ------------------------------------------------------------------ meta
+function setupMeta(meta) {
   meta.all = { categories: meta.categories, strategies: meta.strategies };
-  const labCats = new Set(meta.categories.filter((c) => c.stage === "lab").map((c) => c.id));
-  const isLab = (s) => s.stage === "lab" || labCats.has(s.category);
-  meta.lab = { categories: meta.categories.filter((c) => labCats.has(c.id)), strategies: meta.strategies.filter(isLab) };
-  meta.categories = meta.categories.filter((c) => !labCats.has(c.id));
-  meta.strategies = meta.strategies.filter((s) => !isLab(s));
 }
 
 function leadTimeLine(cat) {
   const lt = cat.lead_time;
   if (!lt) return null;
   return h("p", { class: "muted small", title: "An entry leads if the name was not a Leaders top-10 name in the prior 30 days and joins within a year." },
-    `Lead time: ${pct(lt.became_leader, 0)} of ${lt.entries} entries later joined ${catOf(lt.leaders)?.name || lt.leaders} top 10`,
+    `Lead time: ${pct(lt.became_leader, 0)} of ${lt.entries} entries later joined ${catOf(lt.leaders)?.short || lt.leaders} top 10`,
     lt.median_lead_days != null ? ` (median ${lt.median_lead_days} days later)` : "", `; ${pct(lt.already_leader, 0)} were already there.`);
-}
-
-async function labPage(root) {
-  root.appendChild(h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Lab"),
-    h("p", { class: "lede" }, "New categories and methods on trial. Each runs with the same evaluation as everything else; its rules are frozen on the date it was added, so results since then are out of sample. Promoted, edited or retired at each quarterly review."))));
-  const rows = META.lab.strategies;
-  if (!rows.length) {
-    root.appendChild(h("p", { class: "empty" }, "Nothing on trial yet. New signal families (docs/PLAN-signals.md) appear here as they are built."));
-  } else {
-    const added = (s) => s.metrics.since_added || {};
-    const days = (s) => (s.added ? Math.max(0, Math.round((new Date(META.data_through) - new Date(s.added)) / 864e5)) : null);
-    root.appendChild(table([
-      { key: "name", label: "Strategy", sort: (r) => r.name, cls: () => "name-col", render: (r) => h("a", { href: `#/strategy/${r.id}` }, r.name) },
-      { key: "added", label: "Added", sort: (r) => r.added, render: (r) => (r.added ? fmtDate(r.added) : "—") },
-      { key: "cagr", label: "Backtest CAGR", num: true, sort: (r) => r.metrics.all?.cagr, cls: (r) => cls(r.metrics.all?.excess_cagr), render: (r) => pct(r.metrics.all?.cagr) },
-      { key: "sharpe", label: "Sharpe", num: true, sort: (r) => r.metrics.all?.sharpe, render: (r) => num(r.metrics.all?.sharpe) },
-      { key: "dd", label: "Max DD", num: true, sort: (r) => r.metrics.all?.max_drawdown, render: (r) => pct(r.metrics.all?.max_drawdown, 0) },
-      { key: "since", label: "Since added", num: true, title: "Total return since the added date (out of sample)", sort: (r) => added(r).total_return, cls: (r) => cls(added(r).total_return), render: (r) => pct(added(r).total_return, 1) },
-      { key: "since_spy", label: "SPY same", num: true, sort: (r) => added(r).benchmark_total_return, render: (r) => pct(added(r).benchmark_total_return, 1) },
-      { key: "days", label: "Days", num: true, title: "Calendar days on trial", sort: days, render: (r) => days(r) ?? "—" },
-      { key: "hold", label: "Holding now", nosort: true, cls: () => "nowrap", render: (r) => h("span", {}, (r.holdings || []).slice(0, 6).map((k) => h("span", { class: "chip link" }, stockLink(k)))) },
-    ], rows, { sortKey: "cagr" }));
-  }
-  if (META.lab.categories.length) {
-    root.appendChild(h("h2", {}, "Lab categories"));
-    const grid = h("div", { class: "grid cols-2" });
-    root.appendChild(grid);
-    for (const cat of META.lab.categories) {
-      const data = await categoryData(cat.id);
-      const report = reportWithDiff(data, data.dates[data.dates.length - 1]);
-      grid.appendChild(h("div", { class: "card report-card" },
-        h("h3", {}, h("a", { href: `#/category/${cat.id}` }, cat.name), h("span", { class: "muted small" }, cat.group)),
-        h("p", { class: "ink2 small", style: "margin:0 0 8px" }, cat.description),
-        report ? reportTable(cat, report, { compact: true, limit: 10 }) : h("p", { class: "empty" }, "No report yet."),
-        leadTimeLine(cat)));
-    }
-  }
 }
 
 // ------------------------------------------------------------------ newsfeed
@@ -1158,7 +1224,6 @@ async function newsPage(root) {
 }
 
 const ACTION_CLASS = { Buy: "new", Add: "up", Trim: "down", Sell: "down", Hold: "flat" };
-const STATUS = { held: ["Held", "up"], filtered: ["Filtered out", "down"], next: ["Next in line", "flat"] };
 
 function resultText(r) {
   if (!r) return "";
@@ -1170,26 +1235,28 @@ function renderNews(root, d) {
   const p = (t) => h("p", { class: "ink2", style: "margin:4px 0" }, t);
   root.appendChild(h("p", { class: "muted small" }, `Latest report ${fmtDate(d.latest_report)} · data through ${fmtDate(d.data_through)} · generated ${d.generated_at.replace("T", " ")}`));
   root.appendChild(h("div", { class: "card", style: "margin-bottom:14px" }, h("h3", {}, "How this works"),
-    p("Lists: each candidate list is followed only while its Sharpe ratio since it started beats SPY's over the same dates, re-checked every run."),
+    p(`Strategies: each strategy's best variant (see Strategies) is followed once its Sharpe since it started is at least ${num(META.feed.margin_in)}× SPY's over the same dates, and until it falls below SPY's. Re-checked every run.`),
     p("Sizing: each held stock gets its list's half-Kelly — 0.5 × (win rate − loss rate ÷ payoff ratio), from the list's closed trades. " +
       "A stock on several lists appears on each and is sized once, at the lowest of their half-Kellys. If the sizes add up to more than 100% " +
       `they are scaled down proportionally to fit; if less, the rest stays in SPY. No stock above ${pct(d.cap, 0)}.`),
-    p("Filtered lists are shown with their full base list, marking the names the filter skips and why. Each name shows when it joined the list (its current unbroken stretch) and its gain since.")));
+    p("Filtered lists are shown in their base ranking: names the filter skips are struck through, with its reading, and the next names move up. Each name shows when it joined the list (its current unbroken stretch) and its gain since.")));
 
-  root.appendChild(h("h2", {}, "Lists considered"));
+  root.appendChild(h("h2", {}, "Strategies"));
+  const followed = d.candidates.filter((c) => c.included);
   root.appendChild(table([
-    { key: "name", label: "List", sort: (r) => r.name, cls: () => "name-col", render: (r) => h("span", {}, h("a", { href: `#/strategy/${r.id}` }, r.name), r.filter ? h("span", { class: "muted small" }, ` (${r.base_name} + filter)`) : "") },
-    { key: "included", label: "In the feed", sort: (r) => (r.included ? 1 : 0), render: (r) => h("span", { title: r.reason, class: `badge ${r.included ? "up" : "down"}` }, r.included ? "Included" : "Excluded") },
+    { key: "fam", label: "Strategy", sort: (r) => r.family_short, cls: () => "name-col", render: (r) => h("a", { href: `#/strategies/${r.family}`, title: r.family_name }, r.family_short) },
+    { key: "name", label: "Best variant", sort: (r) => r.name, render: (r) => h("a", { href: `#/strategy/${r.id}`, title: r.why_champion || "" }, r.name) },
+    { key: "included", label: "Followed", sort: (r) => (r.included ? 1 : 0), render: (r) => h("span", { title: r.reason, class: `badge ${r.included ? "up" : "flat"}` }, r.included ? "Followed" : "Not yet") },
     { key: "sharpe", label: "Sharpe", num: true, sort: (r) => r.metrics.sharpe, render: (r) => num(r.metrics.sharpe) },
-    { key: "spy", label: "SPY Sharpe, same dates", num: true, sort: (r) => r.spy_sharpe, render: (r) => num(r.spy_sharpe) },
-    { key: "cagr", label: "CAGR", num: true, sort: (r) => r.metrics.cagr, cls: (r) => cls(r.metrics.cagr), render: (r) => pct(r.metrics.cagr) },
-    { key: "dd", label: "Worst drop", num: true, sort: (r) => r.metrics.max_drawdown, render: (r) => pct(r.metrics.max_drawdown, 0) },
+    { key: "spy", label: "SPY Sharpe", num: true, title: "SPY's Sharpe over the same dates", sort: (r) => r.spy_sharpe, render: (r) => num(r.spy_sharpe) },
+    { key: "ratio", label: "× SPY", num: true, sort: (r) => r.ratio, render: (r) => ratioCell(r.ratio) },
+    { key: "cagr", label: "CAGR", num: true, hideNarrow: true, sort: (r) => r.metrics.cagr, cls: (r) => cls(r.metrics.cagr), render: (r) => pct(r.metrics.cagr) },
+    { key: "dd", label: "Worst drop", num: true, hideNarrow: true, sort: (r) => r.metrics.max_drawdown, render: (r) => pct(r.metrics.max_drawdown, 0) },
     { key: "hk", label: "Half-Kelly", num: true, sort: (r) => r.metrics.half_kelly, render: (r) => pct(r.metrics.half_kelly, 1) },
-    { key: "win", label: "Win rate · payoff", num: true, sort: (r) => r.metrics.win_rate, render: (r) => `${pct(r.metrics.win_rate, 0)} · ${num(r.metrics.payoff_ratio)}` },
-    { key: "n", label: "Trades", num: true, sort: (r) => r.metrics.closed_trades, render: (r) => r.metrics.closed_trades },
-    { key: "start", label: "Since", sort: (r) => r.metrics.start, render: (r) => fmtDate(r.metrics.start) },
-  ], d.candidates, { sortKey: "sharpe", compact: true }));
-  root.appendChild(h("p", { class: "muted small" }, d.candidates.map((c) => `${c.name}: ${c.reason}.`).join(" ")));
+    { key: "n", label: "Trades", num: true, hideNarrow: true, sort: (r) => r.metrics.closed_trades, render: (r) => r.metrics.closed_trades },
+    { key: "start", label: "Since", hideNarrow: true, sort: (r) => r.metrics.start, render: (r) => shortYear(r.metrics.start) },
+  ], d.candidates, { sortKey: "ratio", compact: true, rowClass: (r) => (r.included ? null : "dim") }));
+  root.appendChild(h("ul", { class: "reasons muted" }, followed.map((c) => h("li", {}, h("b", {}, c.name), `: ${c.reason}.`, c.why_champion ? ` Best variant: ${c.why_champion}.` : ""))));
 
   const a = d.allocation;
   root.appendChild(h("h2", {}, `Allocation after the ${fmtDate(d.latest_report)} report`));
@@ -1209,25 +1276,11 @@ function renderNews(root, d) {
   root.appendChild(h("h2", {}, "The lists today"));
   const grid = h("div", { class: "grid cols-2" });
   root.appendChild(grid);
-  for (const L of d.lists) {
-    grid.appendChild(h("div", { class: "card" },
-      h("h3", {}, h("a", { href: `#/strategy/${L.id}` }, L.name), h("span", { class: "muted small" }, `half-Kelly ${pct(L.half_kelly, 1)}`)),
-      L.filter ? h("p", { class: "muted small", style: "margin:0 0 6px" }, `Shown with its full base list (${L.shown}); names the ${L.filter} skips are marked.`) : null,
-      table([
-        { key: "rank", label: "#", num: true, sort: (r) => r.rank ?? 99, render: (r) => r.rank ?? "—" },
-        { key: "key", label: "Stock", sort: (r) => r.key, render: (r) => h("span", {}, stockLink(r.key), r.also_on.length ? h("span", { class: "badge new", style: "margin-left:4px", title: `Also on ${r.also_on.join(", ")}` }, `+${r.also_on.length}`) : "") },
-        { key: "status", label: "Status", sort: (r) => r.status, render: (r) => h("span", { class: `badge ${STATUS[r.status][1]}`, title: r.reason || "" }, STATUS[r.status][0]) },
-        { key: "added", label: "On list since", sort: (r) => r.added, cls: () => "nowrap", render: (r) => (r.added ? `${fmtDate(r.added)} (${r.days ?? 0}d)` : "—") },
-        { key: "gain", label: "Gain since", num: true, sort: (r) => r.gain, cls: (r) => cls(r.gain), render: (r) => pct(r.gain, 1, true) },
-        { key: "weight", label: "Weight", num: true, sort: (r) => r.weight, render: (r) => (r.weight == null ? "" : pct(r.weight, 1)) },
-        { key: "why", label: "Note", nosort: true, render: (r) => h("span", { class: "small" }, r.reason || r.feature) },
-      ], L.rows, { sortKey: "rank", desc: false, compact: true })));
-  }
+  for (const L of d.lists) grid.appendChild(listCard(L));
 
   root.appendChild(h("h2", {}, "Report history"));
   for (const rep of d.reports) {
-    const when = rep.upcoming ? h("span", { class: "badge new" }, `for the open on ${fmtDate(rep.date)}`)
-      : rep.filled ? h("span", { class: "muted small" }, `filled at the open on ${fmtDate(rep.date)}`) : h("span", { class: "badge flat" }, "pending");
+    const when = reportWhen(rep);
     const counts = ["Buy", "Add", "Trim", "Sell"].map((k) => [k, rep.actions.filter((x) => x.action === k).length]).filter(([, n]) => n);
     const card = h("div", { class: "card news-report" },
       h("h3", {}, `Report · ${fmtDate(rep.date)}`, when, h("span", { class: "muted small" },
@@ -1246,7 +1299,7 @@ function renderNews(root, d) {
 }
 
 // ------------------------------------------------------------------ shell
-const NAV = [["#/", "Overview"], ["#/news", "News"], ["#/reports", "Reports"], ["#/strategies", "Strategies"], ["#/options", "Options"], ["#/lab", "Lab"], ["#/categories", "Categories"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
+const NAV = [["#/", "Overview"], ["#/news", "News"], ["#/strategies", "Strategies"], ["#/reports", "Reports"], ["#/options", "Options"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
 
 function shell() {
   const nav = h("nav", { class: "main" }, NAV.map(([href, label]) => h("a", { href }, label)));
@@ -1283,10 +1336,9 @@ async function route() {
   navEl.querySelectorAll("a").forEach((x) => {
     const target = x.getAttribute("href").slice(2);
     x.classList.toggle("here", target === page || (target === "reports" && ["report", "compare"].includes(page))
-      || (target === "strategies" && page === "strategy" && META.strategies.find((x) => x.id === a) && !META.strategies.find((x) => x.id === a).options)
+      || (target === "strategies" && (page === "category" || (page === "strategy" && META.strategies.find((x) => x.id === a) && !META.strategies.find((x) => x.id === a).options)))
       || (target === "options" && page === "strategy" && META.strategies.find((x) => x.id === a)?.options)
-      || (target === "lab" && ((page === "strategy" && META.lab.strategies.some((x) => x.id === a)) || (page === "category" && META.lab.categories.some((x) => x.id === a))))
-      || (target === "categories" && page === "category" && !META.lab.categories.some((x) => x.id === a)) || (target === "stocks" && page === "stock") || (target === "congress" && page === "member") || (target === "hedge" && page === "fund"));
+      || (target === "stocks" && page === "stock") || (target === "congress" && page === "member") || (target === "hedge" && page === "fund"));
   });
   main.classList.add("loading");
   const root = h("div");
@@ -1295,12 +1347,11 @@ async function route() {
     else if (page === "reports") await reports(root);
     else if (page === "report") await reports(root, a);
     else if (page === "compare") await reports(root, b, a);
-    else if (page === "strategies") await strategiesPage(root);
+    else if (page === "strategies") await strategiesPage(root, a);
     else if (page === "strategy") await strategyPage(root, a);
     else if (page === "options") await optionsPage(root);
-    else if (page === "lab") await labPage(root);
+    else if (page === "lab" || page === "categories") location.hash = "#/strategies";
     else if (page === "news") await newsPage(root);
-    else if (page === "categories") await categoriesPage(root);
     else if (page === "category") await categoryPage(root, a);
     else if (page === "stocks") await stocksPage(root);
     else if (page === "stock") await stockPage(root, a);
@@ -1325,7 +1376,7 @@ async function route() {
   const lock = await fetch("data/lock.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (lock) await unlockSite(lock);
   META = await load("meta.json");
-  splitLab(META);
+  setupMeta(META);
   STOCKS = new Set(META.stocks.map((s) => s[0]));
   navEl = shell();
   const footer = document.querySelector("footer");

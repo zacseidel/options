@@ -11,13 +11,13 @@ from market.research.lead_time import entries, lead_stats
 from market.store.panel import Panel
 
 
-def test_strategy_stage_and_added(tmp_path):
+def test_strategy_added_date(tmp_path):
     path = tmp_path / "s.yaml"
     path.write_text("""
 defaults: {instrument: stock}
 strategies:
   - {id: a, category: mom12_sp500, slot: [1, 5], hold: while_listed}
-  - {id: b, category: mom12_sp500, slot: [1, 5], hold: while_listed, stage: lab, added: 2026-10-21}
+  - {id: b, category: mom12_sp500, slot: [1, 5], hold: while_listed, added: 2026-10-21}
 option_methods:
   short_dte: {default: [14, 21]}
   call_dte: {short_dte: [14, 28], short_prefer: 21}
@@ -29,8 +29,8 @@ option_methods:
 """)
     by_id = {s.id: s for s in load_strategies(path)}
     assert by_id["a"].stage == "tracked" and by_id["a"].added is None
-    assert by_id["b"].stage == "lab" and by_id["b"].added == date(2026, 10, 21)
-    assert by_id["b.csp20"].stage == "lab" and by_id["b.csp20"].added == date(2026, 10, 21)   # inherits its base
+    assert by_id["b"].stage == "tracked" and by_id["b"].added == date(2026, 10, 21)
+    assert by_id["b.csp20"].added == date(2026, 10, 21)                                    # inherits its base
 
 
 def test_bad_stage_rejected(tmp_path):

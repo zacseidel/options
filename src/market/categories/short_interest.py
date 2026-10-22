@@ -19,7 +19,7 @@ from __future__ import annotations
 import pandas as pd
 
 from market.categories.momentum import TOP_STORED, _leaders
-from market.categories.registry import Context, category, source
+from market.categories.registry import Context, category, source, with_exclusions
 
 CROWDED = 0.80                 # top fifth of days to cover among the index's members that day
 MAX_AGE_DAYS = 45
@@ -60,13 +60,17 @@ def _skip_crowded(ctx: Context, universe: str, ranked: pd.DataFrame) -> pd.DataF
     dtc = table["days_to_cover"]
     if dtc.empty:
         return pd.DataFrame(columns=["score"])                 # before short-interest history
-    crowded = table["crowded"].reindex(ranked.index)
-    kept = ranked[~crowded.fillna(False)]
-    return kept.assign(days_to_cover=dtc.reindex(kept.index)).head(TOP_STORED)
+    crowded = table[table["crowded"]].reindex(ranked.index).dropna(subset=["crowded"])
+    reasons = pd.Series({sid: crowded_reason(r) for sid, r in crowded.iterrows()}, dtype=object)
+    return with_exclusions(ranked.assign(days_to_cover=dtc.reindex(ranked.index)), reasons, TOP_STORED)
+
+
+def crowded_reason(r) -> str:
+    return f"heavily shorted: {r['days_to_cover']:.1f} days to cover (top {max(1, round(100 - r['dtc_pct'] * 100))}%)"
 
 
 @category("mom12si_sp500", "S&P 500 Leaders, Short-Interest Filter", "Short interest", "sp500",
           "S&P 500 Leaders, skipping names in the top fifth of days to cover (short interest ÷ average daily "
-          "volume) among S&P 500 members.", lookback_sessions=280, stage="lab")
+          "volume) among S&P 500 members.", lookback_sessions=280)
 def mom12si_sp500(ctx: Context) -> pd.DataFrame:
     return _skip_crowded(ctx, "sp500", _leaders(ctx, ctx.members("sp500"), keep=30))

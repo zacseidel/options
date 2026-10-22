@@ -25,7 +25,7 @@ from __future__ import annotations
 import pandas as pd
 
 from market.categories.momentum import TOP_STORED, _leaders, _rank_momentum
-from market.categories.registry import Context, category, source
+from market.categories.registry import Context, category, source, with_exclusions
 from market.data.option_flow import feature_panel
 
 WARN_DECILE = 0.90            # top decile of IV ÷ realized vol among liquid S&P 500 / 400 names that day
@@ -71,28 +71,32 @@ def _skip_warned(ctx: Context, ranked: pd.DataFrame) -> pd.DataFrame:
     frame = iv_warnings(ctx)
     if frame is None:
         return pd.DataFrame(columns=["score"])
-    pct = frame["iv_rv_pct"].reindex(ranked.index)
-    kept = ranked[~(pct >= WARN_DECILE)]
-    return kept.assign(iv_rv=frame["iv_rv"].reindex(kept.index)).head(TOP_STORED)
+    warned = frame[frame["iv_rv_pct"] >= WARN_DECILE].reindex(ranked.index).dropna(subset=["iv_rv_pct"])
+    reasons = pd.Series({sid: warned_reason(r) for sid, r in warned.iterrows()}, dtype=object)
+    return with_exclusions(ranked.assign(iv_rv=frame["iv_rv"].reindex(ranked.index)), reasons, TOP_STORED)
+
+
+def warned_reason(r) -> str:
+    return f"options price {r['iv_rv']:.1f}× realized volatility (top {max(1, round(100 - r['iv_rv_pct'] * 100))}%)"
 
 
 @category("mom12iv_sp500", "S&P 500 Leaders, IV Filter", "Option flow", "sp500",
           "S&P 500 Leaders, skipping names in the top decile of implied ÷ realized volatility "
-          "(the Option-Implied Risk warning).", lookback_sessions=280, stage="lab")
+          "(the Option-Implied Risk warning).", lookback_sessions=280)
 def mom12iv_sp500(ctx: Context) -> pd.DataFrame:
     return _skip_warned(ctx, _leaders(ctx, ctx.members("sp500"), keep=30))
 
 
 @category("mom12iv_sp400", "S&P 400 Leaders, IV Filter", "Option flow", "sp400",
           "S&P 400 Leaders, skipping names in the top decile of implied ÷ realized volatility.",
-          lookback_sessions=280, stage="lab")
+          lookback_sessions=280)
 def mom12iv_sp400(ctx: Context) -> pd.DataFrame:
     return _skip_warned(ctx, _leaders(ctx, ctx.members("sp400"), keep=30))
 
 
 @category("rankmomiv_sp500", "S&P 500 Rank Momentum, IV Filter", "Option flow", "sp500",
           "S&P 500 Rank Momentum, skipping names in the top decile of implied ÷ realized volatility.",
-          lookback_sessions=280, stage="lab")
+          lookback_sessions=280)
 def rankmomiv_sp500(ctx: Context) -> pd.DataFrame:
     return _skip_warned(ctx, _rank_momentum(ctx, ctx.members("sp500"), keep=30))
 
@@ -100,7 +104,7 @@ def rankmomiv_sp500(ctx: Context) -> pd.DataFrame:
 @category("ivinverted_sp900", "Inverted Option Term Structure", "Option flow", "sp900",
           "S&P 500 / 400 names whose 30-day implied volatility is furthest above their long-dated implied "
           "volatility (near-term fear; liquid options, realized vol ≥ 15%). These beat SPY over the next month.",
-          lookback_sessions=0, stage="lab")
+          lookback_sessions=0)
 def ivinverted_sp900(ctx: Context) -> pd.DataFrame:
     frame = iv_warnings(ctx)
     if frame is None:

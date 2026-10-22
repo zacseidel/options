@@ -27,7 +27,6 @@ class Category:
     description: str
     compute: Callable[["Context"], pd.DataFrame]
     lookback_sessions: int                 # history needed before the first computable date
-    stage: str = "tracked"                 # 'lab' categories show only on the Lab page (PLAN-signals §2)
 
     @property
     def version(self) -> str:
@@ -38,12 +37,22 @@ class Category:
 REGISTRY: dict[str, Category] = {}
 
 
-def category(id: str, name: str, group: str, universe: str, description: str, lookback_sessions: int,
-             stage: str = "tracked"):
+def category(id: str, name: str, group: str, universe: str, description: str, lookback_sessions: int):
     def register(fn: Callable[["Context"], pd.DataFrame]) -> Callable[["Context"], pd.DataFrame]:
-        REGISTRY[id] = Category(id, name, group, universe, description, fn, lookback_sessions, stage)
+        REGISTRY[id] = Category(id, name, group, universe, description, fn, lookback_sessions)
         return fn
     return register
+
+
+def with_exclusions(ranked: pd.DataFrame, reasons: pd.Series, keep: int) -> pd.DataFrame:
+    """A filter variant's result: `ranked` in base order with an `excluded` column — the filter's reason for each
+    skipped name, None for kept ones — cut after the `keep`-th kept name. The snapshot builder stores the kept
+    names as the list (ranked 1, 2, …) and the skipped ones in `category_exclusions`, so pages can show the base
+    list with the skipped names struck through."""
+    reasons = reasons.reindex(ranked.index).astype(object).where(reasons.reindex(ranked.index).notna(), None)
+    kept = [i for i, r in enumerate(reasons) if r is None]
+    end = kept[keep - 1] + 1 if len(kept) >= keep else len(ranked)
+    return ranked.iloc[:end].assign(excluded=reasons.iloc[:end])
 
 
 # Data sources a category may read beyond prices (fundamentals, events, option flow, short interest).

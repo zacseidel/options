@@ -68,6 +68,6 @@ def _steady(ctx: Context, universe: str) -> pd.DataFrame:
 @category("steady_sp500", "S&P 500 Steady Leaders", "Momentum", "sp500",
           "S&P 500 names ranked 6–50 by 12-month return, ordered by how many of the last 26 weeks they have spent in "
           "the top 50 (ties to the better current rank): long-running leaders just outside the top 5.",
-          lookback_sessions=380, stage="lab")
+          lookback_sessions=380)
 def steady_sp500(ctx: Context) -> pd.DataFrame:
     return _steady(ctx, "sp500")

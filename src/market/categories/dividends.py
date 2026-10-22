@@ -30,7 +30,7 @@ def _load(con, panel) -> pd.DataFrame:
 
 @category("divraise_sp900", "Dividend Raisers", "Corporate actions", "sp900",
           "S&P 500 / 400 companies that announced a regular dividend at least 10% above the previous one "
-          "(same frequency), listed once when announced.", lookback_sessions=5, stage="lab")
+          "(same frequency), listed once when announced.", lookback_sessions=5)
 def divraise_sp900(ctx: Context) -> pd.DataFrame:
     ev = ctx.source("dividend_events")
     previous = ctx.report_date - timedelta(days=3 if ctx.report_date.weekday() == 4 else 4)
@@ -48,7 +48,7 @@ CUT_MAX = -0.10
 @category("divcut_sp900", "Dividend Cutters", "Corporate actions", "sp900",
           "S&P 500 / 400 companies that announced a regular dividend at least 10% below the previous one "
           "(same frequency), listed once when announced. A short-candidate list: these fell ~7% a year.",
-          lookback_sessions=5, stage="lab")
+          lookback_sessions=5)
 def divcut_sp900(ctx: Context) -> pd.DataFrame:
     ev = ctx.source("dividend_events")
     previous = ctx.report_date - timedelta(days=3 if ctx.report_date.weekday() == 4 else 4)

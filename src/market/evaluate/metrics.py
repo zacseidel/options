@@ -57,6 +57,10 @@ def performance(nav: pd.Series, risk_free: float, benchmark: pd.Series | None = 
                 out.update({"beta": beta, "alpha": alpha, "correlation": joined.corr().iloc[0, 1]})
             b_total = bench.iloc[-1] / bench.iloc[0] - 1
             out["benchmark_total_return"] = b_total
+            # The benchmark's Sharpe and drawdown over the same dates: the one SPY number every page compares to.
+            b_excess = b_ret - rf_daily
+            out["benchmark_sharpe"] = b_excess.mean() / b_ret.std() * math.sqrt(TRADING_DAYS) if b_ret.std() > 0 else None
+            out["benchmark_max_drawdown"] = (bench / bench.cummax() - 1).min()
             out["excess_total_return"] = total - b_total
             if years > 0:
                 b_cagr = (bench.iloc[-1] / bench.iloc[0]) ** (1 / years) - 1

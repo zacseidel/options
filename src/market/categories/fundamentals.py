@@ -59,14 +59,14 @@ def _fmom(ctx: Context, universe: str) -> pd.DataFrame:
 
 @category("fmom_sp500", "S&P 500 Fundamental Momentum", "Fundamentals", "sp500",
           "S&P 500 members with growing revenue ranked by margin expansion (gross and operating margin vs a "
-          "year earlier) and trailing earnings growth, as filed.", lookback_sessions=0, stage="lab")
+          "year earlier) and trailing earnings growth, as filed.", lookback_sessions=0)
 def fmom_sp500(ctx: Context) -> pd.DataFrame:
     return _fmom(ctx, "sp500")
 
 
 @category("fmom_sp400", "S&P 400 Fundamental Momentum", "Fundamentals", "sp400",
           "S&P 400 members with growing revenue ranked by margin expansion and trailing earnings growth, as filed.",
-          lookback_sessions=0, stage="lab")
+          lookback_sessions=0)
 def fmom_sp400(ctx: Context) -> pd.DataFrame:
     return _fmom(ctx, "sp400")
 
@@ -92,7 +92,7 @@ def _emerging(ctx: Context, universe: str, outside_top: int | None = 25) -> pd.D
 
 @category("emerging_sp400", "S&P 400 Emerging Leaders", "Fundamentals", "sp400",
           "Top-fifth Fundamental Momentum names whose 12-month return rank is rising but still outside the top 25.",
-          lookback_sessions=280, stage="lab")
+          lookback_sessions=280)
 def emerging_sp400(ctx: Context) -> pd.DataFrame:
     return _emerging(ctx, "sp400")
 
@@ -108,7 +108,7 @@ def _rerating(ctx: Context, universe: str) -> pd.DataFrame:
 
 @category("rerating_sp500", "S&P 500 Re-rating", "Fundamentals", "sp500",
           "Revenue and earnings growing, ranked by how much the price-to-sales multiple expanded over the year.",
-          lookback_sessions=260, stage="lab")
+          lookback_sessions=260)
 def rerating_sp500(ctx: Context) -> pd.DataFrame:
     return _rerating(ctx, "sp500")
 
@@ -124,7 +124,7 @@ def _shrinkers(ctx: Context, universe: str) -> pd.DataFrame:
 
 @category("shrinkers_sp500", "S&P 500 Share Shrinkers", "Fundamentals", "sp500",
           "Diluted share count down 3% or more over the year with positive free cash flow; biggest shrinkers first.",
-          lookback_sessions=0, stage="lab")
+          lookback_sessions=0)
 def shrinkers_sp500(ctx: Context) -> pd.DataFrame:
     return _shrinkers(ctx, "sp500")
 
@@ -132,6 +132,6 @@ def shrinkers_sp500(ctx: Context) -> pd.DataFrame:
 @category("emergingall_sp400", "S&P 400 Improving Fundamentals & Rank", "Fundamentals", "sp400",
           "Like S&P 400 Emerging Leaders but without leaving out the top 25 by 12-month return: top-fifth Fundamental "
           "Momentum names whose 12-month return rank is rising, ordered by fundamental score.",
-          lookback_sessions=280, stage="lab")
+          lookback_sessions=280)
 def emergingall_sp400(ctx: Context) -> pd.DataFrame:
     return _emerging(ctx, "sp400", outside_top=None)
