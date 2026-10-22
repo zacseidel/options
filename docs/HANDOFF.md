@@ -236,6 +236,11 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
     dollars in SPY on the same days, sold on the same dates.
   - Lots of one ticker in a bucket form one dollar-weighted row that opens to each buy.
   - Same-named buckets merge (the two "Schwab, Joint" sections did).
+  - **Annualized vs SPY**: the XIRR of the actual flows (buys out, sales and today's value back) minus the XIRR of
+    the SPY shadow's flows. This weights lots by dollars × time held. It is blank under 3 months invested on average.
+    Note: a short lot's miss is magnified when annualized, so a big recent buy can swing it.
+  - Undated lots are graded over the last 2 years (`UNDATED_YEARS`).
+  - Position tickers get stock pages.
 - **Prices for position tickers:** registered as `signals` / source `positions` by the daily `signals` step, so they
   get bars back to their buy dates.
   - ETFs are allowed for these names (SCHD, TMFC).

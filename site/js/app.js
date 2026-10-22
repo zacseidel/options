@@ -1232,7 +1232,8 @@ async function decisionsPage(root) {
     decTile("Invested", usd(inv), "at the closes the lots were bought"),
     decTile("Worth", usd(val), `${val >= inv ? "+" : "−"}${usd(Math.abs(val - inv))}`, cls(val - inv)),
     decTile("Return", pct(inv ? val / inv - 1 : null, 1, true), `SPY, same dollars: ${pct(inv ? spy / inv - 1 : null, 1, true)}`, cls(val - spy)),
-    decTile("vs SPY", pct(inv ? (val - spy) / inv : null, 1, true), `${usd(Math.abs(val - spy))} ${val >= spy ? "ahead of" : "behind"} SPY`, cls(val - spy))));
+    decTile("vs SPY", pct(inv ? (val - spy) / inv : null, 1, true), `${usd(Math.abs(val - spy))} ${val >= spy ? "ahead of" : "behind"} SPY`, cls(val - spy)),
+    annTile(d.total)));
   for (const b of live) root.appendChild(bucketBlock(b));
   if (archived.some((b) => b.summary.lots)) {
     const fold = h("details", { class: "fold" }, h("summary", {}, h("h2", { style: "display:inline" }, `Archive (${archived.reduce((a, b) => a + b.summary.lots, 0)})`)));
@@ -1241,9 +1242,23 @@ async function decisionsPage(root) {
   }
   root.appendChild(h("p", { class: "muted small", style: "max-width:780px" },
     `A lot's cost is its shares × the close on (or after) its buy date; lots without a share count count as ${d.default_shares}. ` +
-    "A lot with no date was held longer than the stored prices and is graded from the first stored close (marked ≤). " +
+    `* A lot with no date was held longer than we know; it is graded over the last ${d.undated_years} years. ` +
+    "vs SPY is cumulative: dollars ahead of the same dollars in SPY, per dollar invested. /yr vs SPY is annualized: the yearly rate earned on the actual buys and sales minus SPY's on the same flows, so lots held longer count for more " +
+    `(blank when the money was in for under ${Math.round(d.min_annualize_years * 12)} months on average). ` +
     "Returns are total return; splits after a buy are handled. Personal tracking only, not investment advice."));
 }
+
+const ANN_TITLE = "Annual rate earned on the actual buys and sales (XIRR) minus the rate the same dollars earned in SPY: weights each lot by dollars × time held, so buckets of different ages compare fairly.";
+
+function annTile(a) {
+  return h("div", { class: "tile", title: ANN_TITLE }, h("div", { class: "label" }, "Per year vs SPY"),
+    h("div", { class: `value ${cls(a?.ann_alpha)}` }, a?.ann_alpha == null ? "—" : `${pct(a.ann_alpha, 1, true)}/yr`),
+    h("div", { class: "delta" }, a?.ann == null ? `under ${Math.round((a?.years ?? 0) * 12)} months invested on average; too soon to annualize`
+      : `${pct(a.ann, 1)}/yr vs SPY ${pct(a.spy_ann, 1)}/yr`));
+}
+
+const annCell = (r, small = "") => h("td", { class: `num ${small} ${cls(r.ann_alpha)}`, title: r.ann == null ? "held too briefly to annualize" : `${pct(r.ann, 1)}/yr vs SPY ${pct(r.spy_ann, 1)}/yr` },
+  r.ann_alpha == null ? "—" : pct(r.ann_alpha, 1, true));
 
 function decTile(label, value, delta, deltaCls) {
   return h("div", { class: "tile" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value),
@@ -1259,6 +1274,7 @@ function bucketBlock(b) {
     decTile("Worth", usd(s.value), `${s.value >= s.invested ? "+" : "−"}${usd(Math.abs(s.value - s.invested))}`, cls(s.value - s.invested)),
     decTile("Return", pct(s.ret, 1, true), `SPY, same dollars: ${pct(s.spy_ret, 1, true)}`, cls(s.alpha)),
     decTile("vs SPY", pct(s.alpha, 1, true), `${usd(Math.abs(s.value - s.spy_value))} ${s.value >= s.spy_value ? "ahead" : "behind"}`, cls(s.alpha)),
+    annTile(s),
     decTile("Buys that beat SPY", `${s.beat} of ${s.priced}`, s.closed_stats?.half_kelly != null ? `half-Kelly ${pct(s.closed_stats.half_kelly, 0)} (closed)` : "")));
   if (s.unpriced.length) box.appendChild(h("p", { class: "muted small" }, `No prices for ${s.unpriced.join(", ")} (not in the stock data, e.g. a mutual fund or a mistyped ticker); left out of the totals.`));
   if (b.series && b.series.dates.length > 2) {
@@ -1280,10 +1296,10 @@ function lotTable(rows, kind) {
   const cols = [
     ["Ticker", null], ["Shares", "num"], [closed ? "Held" : "Since", null], ["Avg cost", "num hide-narrow"],
     [closed ? "Sold at" : "Price", "num hide-narrow"], ["Cost", "num hide-narrow"], [closed ? "Proceeds" : "Worth", "num"],
-    ["Return", "num"], ["SPY", "num"], ["vs SPY", "num"], ...(closed ? [["After sale", "num hide-narrow"]] : []), ["Notes", "hide-narrow"]];
+    ["Return", "num"], ["SPY", "num"], ["vs SPY", "num"], ["/yr vs SPY", "num"], ...(closed ? [["After sale", "num hide-narrow"]] : []), ["Notes", "hide-narrow"]];
   let sortKey = "value", down = true;
   const sorters = { Ticker: (r) => r.ticker, Shares: (r) => r.shares, Return: (r) => r.ret, SPY: (r) => r.spy_ret, "vs SPY": (r) => r.alpha,
-    Worth: (r) => r.value, Proceeds: (r) => r.value, Cost: (r) => r.cost, Since: (r) => r.first, Held: (r) => r.first };
+    "/yr vs SPY": (r) => r.ann_alpha, Worth: (r) => r.value, Proceeds: (r) => r.value, Cost: (r) => r.cost, Since: (r) => r.first, Held: (r) => r.first };
   const wrap = h("div", { class: "table-wrap" });
   const render = () => {
     const f = sorters[sortKey] || ((r) => r.value);
@@ -1303,7 +1319,7 @@ function lotTable(rows, kind) {
       } }, `▸ ${r.n}`) : null;
       const lot = r.n === 1 ? r.lots[0] : null;
       const since = closed ? (lot ? `${shortDate(lot.entry_date)} → ${shortDate(lot.end_date)}` : `${r.n} lots`)
-        : `${r.assumed ? "≤ " : ""}${r.first && r.first !== "9999" ? fmtDate(r.first) : "—"}`;
+        : `${r.first && r.first !== "9999" ? fmtDate(r.first) : "—"}${r.assumed ? " *" : ""}`;
       body.appendChild(h("tr", { class: r.n > 1 ? "lot-parent" : null },
         h("td", { class: "ticker" }, stockLink(r.ticker), toggle ? [" ", toggle] : "", r.n > 1 ? h("span", { class: "muted small" }, ` ${r.beat ?? 0}/${r.n} beat SPY`) : ""),
         h("td", { class: "num" }, shareText(r.shares)),
@@ -1315,6 +1331,7 @@ function lotTable(rows, kind) {
         h("td", { class: `num ${cls(r.ret)}` }, pct(r.ret, 1, true)),
         h("td", { class: `num ${cls(r.spy_ret)}` }, pct(r.spy_ret, 1, true)),
         h("td", { class: `num ${cls(r.alpha)}` }, r.priced ? pct(r.alpha, 1, true) : h("span", { class: "muted small" }, "no prices")),
+        annCell(r),
         ...(closed ? [h("td", { class: `num hide-narrow ${cls(r.after_alpha)}`, title: r.after_ret == null ? "" : `stock ${pct(r.after_ret, 1, true)} vs SPY ${pct(r.after_spy, 1, true)} since the sale` }, r.after_alpha == null ? "—" : `${pct(r.after_ret, 0, true)} vs ${pct(r.after_spy, 0, true)}`)] : []),
         h("td", { class: "small hide-narrow" }, r.notes || "")));
       kids.forEach((k) => body.appendChild(k));
@@ -1327,7 +1344,7 @@ function lotTable(rows, kind) {
 }
 
 function lotRow(l, closed) {
-  const when = closed ? `${shortDate(l.entry_date)} → ${shortDate(l.end_date)}` : l.assumed ? `≤ ${fmtDate(l.entry_date)}` : fmtDate(l.entry_date || l.open);
+  const when = closed ? `${shortDate(l.entry_date)} → ${shortDate(l.end_date)}` : l.assumed ? `${fmtDate(l.entry_date)} *` : fmtDate(l.entry_date || l.open);
   return h("tr", { class: "lot-child", hidden: "" },
     h("td", { class: "small muted" }, "└ buy ", vsBadge(l.alpha)),
     h("td", { class: "num small", title: l.shares_given ? "" : "no share count in positions.md: counted as the default" }, shareText(l.shares), l.shares_given ? "" : "*"),
@@ -1339,6 +1356,7 @@ function lotRow(l, closed) {
     h("td", { class: `num small ${cls(l.ret)}` }, pct(l.ret, 1, true)),
     h("td", { class: `num small ${cls(l.spy_ret)}` }, pct(l.spy_ret, 1, true)),
     h("td", { class: `num small ${cls(l.alpha)}` }, l.priced ? pct(l.alpha, 1, true) : "no prices"),
+    annCell(l, "small"),
     ...(closed ? [h("td", { class: `num small hide-narrow ${cls(l.after_alpha)}` }, l.after_alpha == null ? "—" : `${pct(l.after_ret, 0, true)} vs ${pct(l.after_spy, 0, true)}`)] : []),
     h("td", { class: "small hide-narrow" }, l.notes || ""));
 }

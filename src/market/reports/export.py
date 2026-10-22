@@ -269,8 +269,9 @@ def export() -> dict:
     # ---------------------------------------------------------------- stocks
     first_report = min(c["first"] for c in category_meta)
     wl = watchlists.load()
+    held = {lot.ticker for b in export_decisions.load() for lot in b.lots}      # Decisions names get pages too
     stock_ids = set(snaps["security_id"]) | {
-        sid for sid, tk in key_of.items() if tk in {t for w in wl for t in w.tickers}}
+        sid for sid, tk in key_of.items() if tk in {t for w in wl for t in w.tickers} | held}
     names = dict(con.execute("SELECT security_id, name FROM securities").fetchall())
     report_pairs = [(str(d), str(a)) for d, a in con.execute(
         "SELECT DISTINCT report_date, as_of FROM category_snapshots WHERE origin = 'backtest' ORDER BY 1").fetchall()]

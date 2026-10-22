@@ -82,3 +82,32 @@ def test_consolidation_is_dollar_weighted():
 def test_first_needed_reaches_back_before_the_earliest_buy():
     need = first_needed(parse_positions(TEXT), history_start=date(2021, 10, 1))
     assert need["NVDA"] == date(2024, 12, 23) and need["AAPL"] == date(2021, 10, 1)
+
+
+def test_xirr_matches_a_known_rate():
+    from market.reports.export_decisions import xirr
+    t0 = pd.Timestamp("2024-01-01")
+    flows = [(t0, -1000.0), (t0 + pd.Timedelta(days=731), 1000 * 1.10 ** (731 / 365.25))]   # 10% a year
+    assert abs(xirr(flows) - 0.10) < 1e-6
+    assert xirr([(t0, -1000.0)]) is None
+
+
+def test_annualized_is_the_yearly_gap_whatever_the_holding_periods():
+    from market.reports.export_decisions import annualized
+    t0 = pd.Timestamp("2023-01-02")
+
+    def lot(cost, days):                       # earns 10% a year while SPY earns 5%, for `days`
+        years = days / 365.25
+        return {"priced": True, "cost": cost, "value": cost * 1.10 ** years, "spy_value": cost * 1.05 ** years,
+                "_entry": t0, "_end": t0 + pd.Timedelta(days=days)}
+    a = annualized([lot(1000, 1096), lot(9000, 365)])
+    assert abs(a["ann"] - 0.10) < 1e-4 and abs(a["spy_ann"] - 0.05) < 1e-4 and abs(a["ann_alpha"] - 0.05) < 1e-4
+    assert "ann" not in annualized([lot(9000, 30)])    # under three months: too short to annualize
+
+
+def test_undated_lot_is_graded_over_the_last_two_years():
+    days = pd.bdate_range("2021-01-04", "2026-10-21")
+    tr = pd.Series(np.linspace(100, 200, len(days)), index=days)
+    panel = SimpleNamespace(tr=pd.DataFrame({"X": tr, "SPY": tr}), raw_close=pd.DataFrame({"X": tr}), sessions=days)
+    r = price_lot(parse_bullet("- X |  | 10", "open"), "X", panel, tr)
+    assert r["assumed"] and r["entry_date"] == "2024-10-21"
