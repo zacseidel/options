@@ -3,6 +3,7 @@
 Layout (small files, loaded per page):
   meta.json                 categories, strategies (+ metrics per window), benchmarks, report dates
   sessions.json             the trading-session calendar shared by every series
+  decisions.json            the personal position log (positions.md) priced vs SPY
   categories/<id>.json      full report history for one category (any report / diff is derived in the browser)
   strategies/<id>.json      NAV (total + price) with aligned benchmarks, trades
   stocks/<TICKER>.json      closes, category history, strategy trades, Congress and 13F context
@@ -27,7 +28,7 @@ import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.families import FAMILIES, SECTIONS, variant
 from market.categories.registry import REGISTRY
 from market.config import config, directory
-from market.reports import export_newsfeed, export_options, export_profiles, export_smartmoney, site_lock
+from market.reports import export_decisions, export_newsfeed, export_options, export_profiles, export_smartmoney, site_lock
 from market.data import watchlists
 from market.evaluate import champions
 from market.evaluate.engine import load_strategies
@@ -263,6 +264,7 @@ def export() -> dict:
     metrics_all, nav_wide = champions.load_inputs(con, all_strategies)
     families = champions.update_feed(con, champions.compute(con, all_strategies, metrics_all, nav_wide))
     sizes["news"] = _write(out_dir / "news.json", export_newsfeed.build(con, panel, key_of, families))
+    sizes["decisions"] = _write(out_dir / "decisions.json", export_decisions.build(con, panel, key_of))
 
     # ---------------------------------------------------------------- stocks
     first_report = min(c["first"] for c in category_meta)

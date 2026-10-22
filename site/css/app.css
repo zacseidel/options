@@ -261,3 +261,11 @@ tr.dim td { color: var(--ink-2); }
 .headline .moves { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 10px; font-size: 14px; }
 .headline .alloc { margin: 4px 0 8px; line-height: 1.9; }
 @media (max-width: 640px) { .ratio-bar { width: 32px; } }
+
+/* Decisions: consolidated ticker rows that open to their individual buys */
+.bucket { margin-bottom: 16px; }
+.bucket h2 { margin-top: 0; }
+table.lots tr.lot-child td { background: var(--surface-2); }
+table.lots tr.lot-child[hidden] { display: none; }
+.lot-toggle { font-size: 12px; padding: 0 4px; }
+.more-links { margin-top: 24px; }

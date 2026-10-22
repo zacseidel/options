@@ -223,6 +223,25 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   - Build objects go to a throwaway object store, so neither `main` nor the local `.git` grows.
   - It refuses to publish unencrypted data (no `site/data/lock.json`).
 
+## Decisions page (2026-10-22)
+- **Source:** ported from smartmoney's Decisions page.
+  - The log is `positions.md` at the repo root: committed, public (the user chose this so it can be edited in
+    GitHub's web editor).
+  - Format: `- TICKER | open-date | shares | notes` (open) and `- TICKER | open | close | shares | notes`
+    (closed).
+  - All lots were ported with 10 shares.
+  - `ops/launchd/run.sh` now runs `git pull --ff-only` before the daily run, so web edits land.
+- **Math** (`market.reports.export_decisions` → `decisions.json`, page `#/decisions` in place of Reports in the nav):
+  - Lot cost = shares × the close on its buy date. Value uses total return. The yardstick is a SPY shadow: the same
+    dollars in SPY on the same days, sold on the same dates.
+  - Lots of one ticker in a bucket form one dollar-weighted row that opens to each buy.
+  - Same-named buckets merge (the two "Schwab, Joint" sections did).
+- **Prices for position tickers:** registered as `signals` / source `positions` by the daily `signals` step, so they
+  get bars back to their buy dates.
+  - ETFs are allowed for these names (SCHD, TMFC).
+  - FSAGX (a mutual fund) and BBRK (unknown ticker, probably mistyped) have no prices and are left out of totals.
+- Reports is now a link at the bottom of Overview (`#/reports` still works).
+
 ## Fixed 2026-10-21 (scheduled-run bugs)
 - The 17:30 run failed every weekday on `options`: before a session's OPRA file is published the
   bucket answers 403 (later NoSuchKey). A 403 within `RECENT_403_DAYS` (4) of today now counts as

@@ -90,7 +90,10 @@ def extend() -> dict:
     if not wanted:
         con.close()
         return {"new_tickers": 0}
-    securities, history, calls = asyncio.run(resolve(wanted, set()))
+    # Names held in the Decisions log may be ETFs (SCHD, QQQ…): resolve those like benchmarks, ETFs allowed.
+    held = {r[0] for r in con.execute("SELECT ticker FROM universe_membership WHERE universe = ? AND source = 'positions'",
+                                      [SIGNALS]).fetchall()}
+    securities, history, calls = asyncio.run(resolve(wanted - held, wanted & held))
     existing = {r[0] for r in con.execute("SELECT security_id FROM securities").fetchall()}
     if len(securities):
         securities = securities[~securities["security_id"].isin(existing)]

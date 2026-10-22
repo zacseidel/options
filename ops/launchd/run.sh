@@ -35,6 +35,9 @@ fi
 
 say "=== market daily update for $day ==="
 cd "$REPO" || exit 1
+# Pick up edits made on GitHub (positions.md in the web editor). Fast-forward only: if local and remote have
+# diverged, say so and build from the local copy.
+git pull --ff-only --quiet origin main || say "WARN: git pull failed; building from the local copy"
 "$PYTHON" -m market.ops.run
 status=$?
 if [[ $status -eq 0 ]]; then echo "$day" > "$STAMP"; say "DONE"; else say "FAILED ($status); a later firing will retry"; fi

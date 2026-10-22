@@ -56,6 +56,10 @@ def signals(full: bool = False) -> dict:
             for ticker in list(frame.index[:CANDIDATES]):
                 first.setdefault(ticker, as_of.date())
     added["hedge"] = securities.set_signal_tickers(con, "hedge", first)
+    # Names in the Decisions log (positions.md) need prices back to their buy dates, like signal names.
+    from market.reports import export_decisions
+    added["positions"] = securities.set_signal_tickers(
+        con, "positions", export_decisions.first_needed(history_start=securities.history_start()))
     con.close()
     return {"new_signal_tickers": added, "securities": securities.extend(),
             "bars": bars.backfill_new_securities(), "corpactions": corpactions.sync_new_tickers(),

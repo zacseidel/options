@@ -255,6 +255,8 @@ async function overview(root) {
     root.appendChild(grid);
     for (const L of news.lists) grid.appendChild(listCard(L, { compact: true }));
   }
+  root.appendChild(h("p", { class: "more-links" }, h("a", { href: "#/reports" }, "Reports →"),
+    h("span", { class: "muted small" }, " every list on each Tuesday and Friday report, with changes since the one before (or any earlier one)")));
 }
 
 const ACTION_ORDER = ["Buy", "Add", "Trim", "Sell", "Hold"];
@@ -1204,6 +1206,143 @@ function leadTimeLine(cat) {
     lt.median_lead_days != null ? ` (median ${lt.median_lead_days} days later)` : "", `; ${pct(lt.already_leader, 0)} were already there.`);
 }
 
+// ------------------------------------------------------------------ decisions (positions.md)
+const POSITIONS_URL = "https://github.com/zacseidel/options/edit/main/positions.md";
+const usd = (v) => (v == null ? "—" : `$${Math.round(v).toLocaleString()}`);
+const px = (v) => (v == null ? "—" : `$${v >= 100 ? v.toFixed(0) : v.toFixed(2)}`);
+const shareText = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(2));
+const vsBadge = (a) => (a == null ? "" : h("span", { class: `badge ${a > 0 ? "up" : "down"}` }, a > 0 ? "beat SPY" : "lagged SPY"));
+
+async function decisionsPage(root) {
+  const d = await load("decisions.json");
+  root.appendChild(h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Decisions"),
+    h("p", { class: "lede" }, "Your position log, each bucket priced as a real portfolio: what its lots cost against what they are worth now, " +
+      "compared with the same dollars put into SPY on the same days (and taken out on the same sale dates). Dividends included on both sides. " +
+      "Several buys of one ticker are one row; open it to see each buy."),
+    h("p", { class: "muted small" }, "Edit ", h("a", { href: POSITIONS_URL, target: "_blank", rel: "noopener" }, "positions.md"),
+      " (format at its top); the next daily run picks it up.")),
+    h("div", { class: "muted small" }, d ? `Data through ${fmtDate(d.data_through)}` : "")));
+  if (!d) return root.appendChild(h("p", { class: "empty" }, "No decisions yet: they are written by the next export."));
+  const live = d.buckets.filter((b) => !b.archived);
+  const archived = d.buckets.filter((b) => b.archived);
+  const total = (k) => live.reduce((a, b) => a + (b.summary[k] || 0), 0);
+  const inv = total("invested"), val = total("value"), spy = total("spy_value");
+  root.appendChild(h("div", { class: "tiles" },
+    decTile("Buckets", live.length, `${total("open_lots")} open · ${total("closed_lots")} closed lots`),
+    decTile("Invested", usd(inv), "at the closes the lots were bought"),
+    decTile("Worth", usd(val), `${val >= inv ? "+" : "−"}${usd(Math.abs(val - inv))}`, cls(val - inv)),
+    decTile("Return", pct(inv ? val / inv - 1 : null, 1, true), `SPY, same dollars: ${pct(inv ? spy / inv - 1 : null, 1, true)}`, cls(val - spy)),
+    decTile("vs SPY", pct(inv ? (val - spy) / inv : null, 1, true), `${usd(Math.abs(val - spy))} ${val >= spy ? "ahead of" : "behind"} SPY`, cls(val - spy))));
+  for (const b of live) root.appendChild(bucketBlock(b));
+  if (archived.some((b) => b.summary.lots)) {
+    const fold = h("details", { class: "fold" }, h("summary", {}, h("h2", { style: "display:inline" }, `Archive (${archived.reduce((a, b) => a + b.summary.lots, 0)})`)));
+    for (const b of archived) fold.appendChild(bucketBlock(b));
+    root.appendChild(fold);
+  }
+  root.appendChild(h("p", { class: "muted small", style: "max-width:780px" },
+    `A lot's cost is its shares × the close on (or after) its buy date; lots without a share count count as ${d.default_shares}. ` +
+    "A lot with no date was held longer than the stored prices and is graded from the first stored close (marked ≤). " +
+    "Returns are total return; splits after a buy are handled. Personal tracking only, not investment advice."));
+}
+
+function decTile(label, value, delta, deltaCls) {
+  return h("div", { class: "tile" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value),
+    delta ? h("div", { class: `delta ${deltaCls || ""}` }, delta) : null);
+}
+
+function bucketBlock(b) {
+  const s = b.summary;
+  const box = h("section", { class: "card bucket" }, h("h2", {}, b.name));
+  if (!s.lots) return box.appendChild(h("p", { class: "muted" }, "No positions yet.")), box;
+  box.appendChild(h("div", { class: "tiles" },
+    decTile("Invested", usd(s.invested), `${s.open_lots} open · ${s.closed_lots} closed lots`),
+    decTile("Worth", usd(s.value), `${s.value >= s.invested ? "+" : "−"}${usd(Math.abs(s.value - s.invested))}`, cls(s.value - s.invested)),
+    decTile("Return", pct(s.ret, 1, true), `SPY, same dollars: ${pct(s.spy_ret, 1, true)}`, cls(s.alpha)),
+    decTile("vs SPY", pct(s.alpha, 1, true), `${usd(Math.abs(s.value - s.spy_value))} ${s.value >= s.spy_value ? "ahead" : "behind"}`, cls(s.alpha)),
+    decTile("Buys that beat SPY", `${s.beat} of ${s.priced}`, s.closed_stats?.half_kelly != null ? `half-Kelly ${pct(s.closed_stats.half_kelly, 0)} (closed)` : "")));
+  if (s.unpriced.length) box.appendChild(h("p", { class: "muted small" }, `No prices for ${s.unpriced.join(", ")} (not in the stock data, e.g. a mutual fund or a mistyped ticker); left out of the totals.`));
+  if (b.series && b.series.dates.length > 2) {
+    const holder = h("div");
+    box.appendChild(h("details", { class: "fold" }, h("summary", { class: "muted small" }, "Value over time vs the same dollars in SPY"), holder));
+    lineChart(holder, { dates: b.series.dates, height: 220, format: (v) => usd(v), series: [
+      { name: "Bucket", values: b.series.value, color: css("--series-1") },
+      { name: "SPY, same dollars", values: b.series.spy, color: css("--series-2") },
+      { name: "Invested", values: b.series.invested, color: css("--series-3") }] });
+  }
+  if (b.open.length) box.append(h("h3", {}, `Open (${b.open.length} ticker${b.open.length > 1 ? "s" : ""})`), lotTable(b.open, "open"));
+  if (b.closed.length) box.append(h("h3", {}, `Closed (${b.closed.length})`), lotTable(b.closed, "closed"));
+  return box;
+}
+
+/** One row per ticker (totals, dollar-weighted vs SPY); ▸ opens its individual buys. */
+function lotTable(rows, kind) {
+  const closed = kind === "closed";
+  const cols = [
+    ["Ticker", null], ["Shares", "num"], [closed ? "Held" : "Since", null], ["Avg cost", "num hide-narrow"],
+    [closed ? "Sold at" : "Price", "num hide-narrow"], ["Cost", "num hide-narrow"], [closed ? "Proceeds" : "Worth", "num"],
+    ["Return", "num"], ["SPY", "num"], ["vs SPY", "num"], ...(closed ? [["After sale", "num hide-narrow"]] : []), ["Notes", "hide-narrow"]];
+  let sortKey = "value", down = true;
+  const sorters = { Ticker: (r) => r.ticker, Shares: (r) => r.shares, Return: (r) => r.ret, SPY: (r) => r.spy_ret, "vs SPY": (r) => r.alpha,
+    Worth: (r) => r.value, Proceeds: (r) => r.value, Cost: (r) => r.cost, Since: (r) => r.first, Held: (r) => r.first };
+  const wrap = h("div", { class: "table-wrap" });
+  const render = () => {
+    const f = sorters[sortKey] || ((r) => r.value);
+    const sorted = [...rows].sort((a, b) => { const va = f(a), vb = f(b); if (va == null) return 1; if (vb == null) return -1; return (va > vb ? 1 : va < vb ? -1 : 0) * (down ? -1 : 1); });
+    const head = h("tr", {}, cols.map(([label, c]) => {
+      const th = h("th", { class: `${c || ""} ${sorters[label] ? "sortable" : ""}` }, label, label === sortKey ? h("span", { class: "arrow" }, down ? "▼" : "▲") : null);
+      if (sorters[label]) th.addEventListener("click", () => { down = sortKey === label ? !down : true; sortKey = label; render(); });
+      return th;
+    }));
+    const body = h("tbody");
+    for (const r of sorted) {
+      const kids = r.n > 1 ? r.lots.map((l) => lotRow(l, closed)) : [];
+      const toggle = r.n > 1 ? h("button", { class: "linkish lot-toggle", title: "Show each buy", onclick: () => {
+        const open = toggle.textContent.startsWith("▸");
+        toggle.textContent = `${open ? "▾" : "▸"} ${r.n}`;
+        kids.forEach((k) => k.toggleAttribute("hidden", !open));
+      } }, `▸ ${r.n}`) : null;
+      const lot = r.n === 1 ? r.lots[0] : null;
+      const since = closed ? (lot ? `${shortDate(lot.entry_date)} → ${shortDate(lot.end_date)}` : `${r.n} lots`)
+        : `${r.assumed ? "≤ " : ""}${r.first && r.first !== "9999" ? fmtDate(r.first) : "—"}`;
+      body.appendChild(h("tr", { class: r.n > 1 ? "lot-parent" : null },
+        h("td", { class: "ticker" }, stockLink(r.ticker), toggle ? [" ", toggle] : "", r.n > 1 ? h("span", { class: "muted small" }, ` ${r.beat ?? 0}/${r.n} beat SPY`) : ""),
+        h("td", { class: "num" }, shareText(r.shares)),
+        h("td", { class: "nowrap small" }, since),
+        h("td", { class: "num hide-narrow" }, px(r.avg_px)),
+        h("td", { class: "num hide-narrow" }, px(closed ? lot?.end_px : r.current_px)),
+        h("td", { class: "num hide-narrow" }, usd(r.cost)),
+        h("td", { class: "num" }, usd(r.value)),
+        h("td", { class: `num ${cls(r.ret)}` }, pct(r.ret, 1, true)),
+        h("td", { class: `num ${cls(r.spy_ret)}` }, pct(r.spy_ret, 1, true)),
+        h("td", { class: `num ${cls(r.alpha)}` }, r.priced ? pct(r.alpha, 1, true) : h("span", { class: "muted small" }, "no prices")),
+        ...(closed ? [h("td", { class: `num hide-narrow ${cls(r.after_alpha)}`, title: r.after_ret == null ? "" : `stock ${pct(r.after_ret, 1, true)} vs SPY ${pct(r.after_spy, 1, true)} since the sale` }, r.after_alpha == null ? "—" : `${pct(r.after_ret, 0, true)} vs ${pct(r.after_spy, 0, true)}`)] : []),
+        h("td", { class: "small hide-narrow" }, r.notes || "")));
+      kids.forEach((k) => body.appendChild(k));
+    }
+    wrap.textContent = "";
+    wrap.appendChild(h("table", { class: "table-compact lots" }, h("thead", {}, head), body));
+  };
+  render();
+  return wrap;
+}
+
+function lotRow(l, closed) {
+  const when = closed ? `${shortDate(l.entry_date)} → ${shortDate(l.end_date)}` : l.assumed ? `≤ ${fmtDate(l.entry_date)}` : fmtDate(l.entry_date || l.open);
+  return h("tr", { class: "lot-child", hidden: "" },
+    h("td", { class: "small muted" }, "└ buy ", vsBadge(l.alpha)),
+    h("td", { class: "num small", title: l.shares_given ? "" : "no share count in positions.md: counted as the default" }, shareText(l.shares), l.shares_given ? "" : "*"),
+    h("td", { class: "nowrap small" }, when),
+    h("td", { class: "num small hide-narrow" }, px(l.entry_px)),
+    h("td", { class: "num small hide-narrow" }, px(closed ? l.end_px : l.current_px)),
+    h("td", { class: "num small hide-narrow" }, usd(l.cost)),
+    h("td", { class: "num small" }, usd(l.value)),
+    h("td", { class: `num small ${cls(l.ret)}` }, pct(l.ret, 1, true)),
+    h("td", { class: `num small ${cls(l.spy_ret)}` }, pct(l.spy_ret, 1, true)),
+    h("td", { class: `num small ${cls(l.alpha)}` }, l.priced ? pct(l.alpha, 1, true) : "no prices"),
+    ...(closed ? [h("td", { class: `num small hide-narrow ${cls(l.after_alpha)}` }, l.after_alpha == null ? "—" : `${pct(l.after_ret, 0, true)} vs ${pct(l.after_spy, 0, true)}`)] : []),
+    h("td", { class: "small hide-narrow" }, l.notes || ""));
+}
+
 // ------------------------------------------------------------------ newsfeed
 function caveat() {
   return h("div", { class: "caveat" },
@@ -1300,7 +1439,7 @@ function renderNews(root, d) {
 }
 
 // ------------------------------------------------------------------ shell
-const NAV = [["#/", "Overview"], ["#/news", "News"], ["#/strategies", "Strategies"], ["#/reports", "Reports"], ["#/options", "Options"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
+const NAV = [["#/", "Overview"], ["#/news", "News"], ["#/strategies", "Strategies"], ["#/decisions", "Decisions"], ["#/options", "Options"], ["#/congress", "Congress"], ["#/hedge", "Hedge funds"], ["#/stocks", "Stocks"], ["#/methodology", "Methodology"]];
 
 function shell() {
   const nav = h("nav", { class: "main" }, NAV.map(([href, label]) => h("a", { href }, label)));
@@ -1353,6 +1492,7 @@ async function route() {
     else if (page === "options") await optionsPage(root);
     else if (page === "lab" || page === "categories") location.hash = "#/strategies";
     else if (page === "news") await newsPage(root);
+    else if (page === "decisions") await decisionsPage(root);
     else if (page === "category") await categoryPage(root, a);
     else if (page === "stocks") await stocksPage(root);
     else if (page === "stock") await stockPage(root, a);
