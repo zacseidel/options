@@ -122,8 +122,9 @@ def option_strategies(spec: dict | None, by_id: dict[str, Strategy]) -> list[Str
 
 
 def prune_retired_options(con, strategies: list[Strategy]) -> None:
-    """Drop stored results of option methods no longer in strategies.yaml (ids `<base>.<method>`)."""
-    bases = {s.base for s in strategies if s.base}
+    """Drop stored results of option methods no longer in strategies.yaml (ids `<base>.<method>`), including those
+    of stock strategies that are no longer option bases."""
+    bases = {s.id for s in strategies if s.instrument == "stock"}
     keep = {s.id for s in strategies} | {f"{b}.stock_same" for b in bases}
     for table in ("trades", "option_legs", "nav_daily", "strategy_metrics"):
         stored = [r[0] for r in con.execute(f"SELECT DISTINCT strategy_id FROM {table}").fetchall()]

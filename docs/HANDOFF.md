@@ -203,6 +203,26 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
 - Caveat: a category's `version` hashes only its own function. After editing a shared helper (`_skip_crowded`,
   `_skip_warned`, `_reasonable_growth`), rebuild with `python -m market.reports.snapshot --category …`.
 
+## Options refreshed on the feed strategies + GitHub Pages (2026-10-22)
+- **Option bases:** SPY Ldrs · SI, SPY Rank Mom · IV, MDY Improving Fund. & Rank and Mega Laggards
+  (`config.yaml → options.underlyings.category_slots`, `strategies.yaml → option_methods.bases`).
+  - The option set only counts windows that overlap the 2-year options history: 156 names, 68 of them newly
+    streamed.
+  - The option set does **not** follow the feed automatically. If the feed's strategies change, edit both lists and
+    run `--only options`, then the grid.
+- **Tracked picks:** made by `option_grid.pick_tiers`, a rule written down from the 2026-10-09 picks.
+  - Defensive: best-Sharpe lower-risk method with worst drop ≤ 75% of the stock's.
+  - Balanced: best Sharpe with worst drop within 5 points of the stock's.
+  - Aggressive: best-Sharpe 50% / 100%-in-calls method.
+  - On the old grid it matches 7 of the 12 hand picks. Results are in `docs/options_grid.md`; the Options page
+    findings text (`OPTION_PATTERNS` in app.js) was rewritten from that grid.
+- **S&P 400 options are thin:** 48–77% of MDY Improving windows had no qualifying contract.
+- **Publishing:** the daily run's new `publish` step (`market.ops.publish`) force-pushes one fresh commit (site +
+  encrypted data, ~11.5 MB) to `gh-pages`.
+  - GitHub Pages serves `gh-pages` / root at https://zacseidel.github.io/options/ (it used to serve main:/docs).
+  - Build objects go to a throwaway object store, so neither `main` nor the local `.git` grows.
+  - It refuses to publish unencrypted data (no `site/data/lock.json`).
+
 ## Fixed 2026-10-21 (scheduled-run bugs)
 - The 17:30 run failed every weekday on `options`: before a session's OPRA file is published the
   bucket answers 403 (later NoSuchKey). A 403 within `RECENT_403_DAYS` (4) of today now counts as
@@ -226,8 +246,7 @@ section with digest cards. Data: `site/data/congress.json`, `hedge.json` (export
 1. launchd agent **installed 2026-10-10** (`~/Library/LaunchAgents/com.zacseidel.market.daily.plist`,
    loaded; test fire exited 0). Skips on battery. Check: `launchctl print gui/$(id -u)/com.zacseidel.market.daily`,
    logs `~/Library/Logs/market/`. Re-copy the plist + `launchctl bootout`/`bootstrap` after editing it.
-   GitHub repo `zacseidel/options` is **public** (main pushed). **Still needs your OK:** site publishing —
-   Pages is not enabled and site/data is gitignored, so publishing = a step that pushes the built site.
+   GitHub repo `zacseidel/options` is **public** (main pushed). The site is published daily to `gh-pages` (see above).
 2. Options: re-run the grid periodically and revisit the tracked set; consider aligning CSPs to ~21d;
    the 13F/Congress categories have no option data yet.
 3. 13F history is short (smartmoney ledger starts with Aug-2024 filings and keeps a sliding

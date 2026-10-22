@@ -34,7 +34,7 @@ options:
     watchlists: true                      # every watchlist with `options: true` (watchlists.yaml)
     # Names entering these strategy slots join the option set from that date (D10: categories whose
     # Sharpe beats SPY's). ~99 distinct names over the 2-year options window, measured 2026-10-09.
-    category_slots: [mom12_sp500.top5, rankmom_sp500.top5, mom12_megacap.top5, laggards_mega10.top2.hold21]
+    category_slots: [mom12si_sp500.top5, rankmomiv_sp500.top5, emergingall_sp400.top5, laggards_mega10.top2.hold21]
     max_underlyings: 200                  # hard cap; additions beyond it are refused and reported
   # Option panel (PLAN §4): rows from the daily OPRA day-aggregates file are kept only for names
   # around the periods an option strategy holds them (entry − 10 days → exit + 5 days), and only

@@ -17,7 +17,7 @@
                        batched re-stream for names newly entering an option slot)
  15. evaluation        all strategies, stock and option (derived)
  16. export            site/data JSON
- 17. publish           (not configured yet)
+ 17. publish           push the built site (encrypted data) to the gh-pages branch GitHub Pages serves
 
 Usage:  python -m market.ops.run [--full] [--only STEP ...] [--skip STEP ...]
 """
@@ -39,12 +39,13 @@ from market.config import ROOT
 from market.data import (bars, corpactions, fundamentals, market_caps, option_panel, securities,
                          short_interest, universe_wiki, watchlists)
 from market.evaluate import engine
+from market.ops import publish
 from market.reports import export, snapshot
 from market.smartmoney import hedge, ingest, pipeline
 from market.store.db import connect
 
 STEPS = ["watchlists", "universes", "disclosures", "bars", "fund_periods", "signals", "corpactions", "market_caps",
-         "leaders", "fundamentals", "short_interest", "option_flow", "categories", "options", "evaluation", "export"]
+         "leaders", "fundamentals", "short_interest", "option_flow", "categories", "options", "evaluation", "export", "publish"]
 WEEKLY_DAY = 0                      # Monday: refresh slower-moving reference data
 
 
@@ -191,6 +192,10 @@ def step_evaluation(full: bool) -> dict:
 
 def step_export(full: bool) -> dict:
     return export.export()
+
+
+def step_publish(full: bool) -> dict:
+    return publish.publish()
 
 
 RUNNERS = {name: globals()[f"step_{name}"] for name in STEPS}

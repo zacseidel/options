@@ -68,6 +68,8 @@ def option_windows(con, panel: Panel, today: date | None = None) -> pd.DataFrame
                 if ticker in ids:
                     rows.append((ids[ticker], option_root(ticker), added or history_start(today), today))
     frame = pd.DataFrame(rows, columns=["security_id", "root", "start", "end"])
+    # Windows that ended before the options history starts can't be fetched; they don't count toward the cap.
+    frame = frame[pd.to_datetime(frame["end"]) >= pd.Timestamp(history_start(today))].reset_index(drop=True)
     cap = cfg["underlyings"]["max_underlyings"]
     if frame["security_id"].nunique() > cap:
         raise RuntimeError(f"option set has {frame['security_id'].nunique()} underlyings, over the cap of {cap}")

@@ -1,125 +1,133 @@
 # Option method grid
 
-Options history 2024-10-09 → 2026-10-08. Fills at the traded price (mid of the day's open and close), no spread haircut. Regenerate with `python -m market.evaluate.option_grid`.
+Options history 2024-10-09 → 2026-10-21. Fills at the traded price (mid of the day's open and close), no spread haircut. Regenerate with `python -m market.evaluate.option_grid`.
 
 Exposure is stock-equivalent at entry (1.0× = holding the stock). Half-Kelly is the site's per-trade 0.5 · (win rate − loss rate / payoff); Position = half-Kelly ÷ exposure (cap 100%), the share of a portfolio per position once leverage is counted. LEAP/diagonal windows hold the stock until a qualifying call appears ('no option' = never).
 
-## mom12_sp500.top5 (`mom12_sp500.top5`, 167 windows)
+## SPY Ldrs · SI (`mom12si_sp500.top5`, 200 windows)
+
+Tracked picks: **Defensive** Cash-secured put Δ-0.45 (Sharpe 1.40, worst -26%) · **Balanced** LEAP 12m Δ0.60, 50% in calls (Sharpe 1.81, worst -43%) · **Aggressive** LEAP 12m Δ0.60, 100% in calls (Sharpe 1.93, worst -49%)
 
 | Group | Method | CAGR | Total | Sharpe | Worst drop | Half-Kelly | Exposure | Position | No option | DTE |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Stock | Stock (same windows) | 101% | 305% | 1.23 | -44% | 16% | 1.00× | 16% | — | — |
-| Lower risk | Cash-secured put Δ-0.20 | 34% | 78% | 1.34 | -20% | 25% | 0.22× | 100% | 10% | 17 |
-| Lower risk | Cash-secured put Δ-0.30 | 36% | 84% | 1.17 | -22% | 22% | 0.32× | 69% | 10% | 17 |
-| Lower risk | Cash-secured put Δ-0.45 | 50% | 124% | 1.29 | -25% | 20% | 0.45× | 44% | 10% | 17 |
-| Lower risk | Covered call Δ0.10, ~21d | 85% | 242% | 1.31 | -38% | 16% | 0.87× | 19% | 5% | 21 |
-| Lower risk | Covered call Δ0.20, ~21d | 77% | 213% | 1.29 | -37% | 16% | 0.79× | 21% | 5% | 21 |
-| Lower risk | Covered call Δ0.30, ~21d | 71% | 193% | 1.32 | -34% | 16% | 0.69× | 23% | 5% | 21 |
-| Lower risk | Covered call Δ0.40, ~21d | 57% | 145% | 1.22 | -31% | 16% | 0.60× | 27% | 5% | 21 |
-| Lower risk | Covered call Δ0.50, ~21d | 44% | 108% | 1.12 | -27% | 15% | 0.50× | 31% | 5% | 21 |
-| Lower risk | Diagonal 6m Δ0.80 / short Δ0.20 | 102% | 309% | 1.41 | -43% | 17% | 0.74× | 23% | 10% | 24 |
-| Lower risk | Diagonal 6m Δ0.80 / short Δ0.30 | 94% | 273% | 1.37 | -43% | 17% | 0.62× | 28% | 10% | 24 |
-| Lower risk | Diagonal 12m Δ0.80 / short Δ0.20 | 101% | 302% | 1.36 | -41% | 17% | 0.74× | 23% | 25% | 24 |
-| Lower risk | Diagonal 12m Δ0.80 / short Δ0.30 | 96% | 283% | 1.35 | -40% | 17% | 0.62× | 28% | 25% | 24 |
-| Same risk | LEAP 6m Δ0.80, match stock | 115% | 360% | 1.31 | -45% | 15% | 1.00× | 15% | 10% | 210 |
-| Same risk | LEAP 6m Δ0.60, match stock | 127% | 415% | 1.33 | -45% | 16% | 1.00× | 16% | 6% | 206 |
-| Same risk | LEAP 12m Δ0.80, match stock | 116% | 367% | 1.32 | -43% | 15% | 1.00× | 15% | 25% | 441 |
-| Same risk | LEAP 12m Δ0.60, match stock | 129% | 424% | 1.39 | -46% | 17% | 1.00× | 17% | 28% | 415 |
-| Higher risk | LEAP 6m Δ0.80, 50% in calls | 137% | 460% | 1.31 | -46% | 15% | 1.27× | 12% | 10% | 210 |
-| Higher risk | LEAP 6m Δ0.60, 50% in calls | 217% | 900% | 1.38 | -51% | 16% | 1.64× | 10% | 6% | 206 |
-| Higher risk | LEAP 12m Δ0.80, 50% in calls | 114% | 357% | 1.35 | -40% | 15% | 1.02× | 15% | 25% | 441 |
-| Higher risk | LEAP 12m Δ0.60, 50% in calls | 166% | 606% | 1.49 | -46% | 17% | 1.31× | 13% | 28% | 415 |
-| Higher risk | LEAP 6m Δ0.80, 100% in calls | 305% | 1534% | 1.20 | -70% | 16% | 2.55× | 6% | 10% | 210 |
-| Higher risk | LEAP 6m Δ0.60, 100% in calls | 534% | 3887% | 1.24 | -74% | 17% | 3.28× | 5% | 6% | 206 |
-| Higher risk | LEAP 12m Δ0.80, 100% in calls | 242% | 1064% | 1.36 | -56% | 16% | 2.04× | 8% | 25% | 441 |
-| Higher risk | LEAP 12m Δ0.60, 100% in calls | 365% | 2046% | 1.54 | -57% | 18% | 2.61× | 7% | 28% | 415 |
+| Stock | Stock (same windows) | 125% | 419% | 1.42 | -42% | 18% | 1.00× | 18% | — | — |
+| Lower risk | Cash-secured put Δ-0.20 | 29% | 68% | 1.18 | -17% | 26% | 0.22× | 100% | 12% | 17 |
+| Lower risk | Cash-secured put Δ-0.30 | 33% | 78% | 1.08 | -18% | 24% | 0.32× | 75% | 12% | 17 |
+| Lower risk | Cash-secured put Δ-0.45 | 54% | 142% | 1.40 | -26% | 23% | 0.45× | 51% | 12% | 17 |
+| Lower risk | Covered call Δ0.10, ~21d | 101% | 312% | 1.48 | -37% | 18% | 0.88× | 21% | 7% | 21 |
+| Lower risk | Covered call Δ0.20, ~21d | 86% | 254% | 1.40 | -36% | 19% | 0.80× | 23% | 7% | 21 |
+| Lower risk | Covered call Δ0.30, ~21d | 77% | 218% | 1.39 | -35% | 19% | 0.70× | 27% | 7% | 21 |
+| Lower risk | Covered call Δ0.40, ~21d | 63% | 171% | 1.33 | -32% | 19% | 0.60× | 31% | 7% | 21 |
+| Lower risk | Covered call Δ0.50, ~21d | 50% | 129% | 1.25 | -29% | 18% | 0.50× | 36% | 7% | 21 |
+| Lower risk | Diagonal 6m Δ0.80 / short Δ0.20 | 112% | 362% | 1.51 | -42% | 19% | 0.74× | 25% | 12% | 24 |
+| Lower risk | Diagonal 6m Δ0.80 / short Δ0.30 | 103% | 321% | 1.47 | -43% | 19% | 0.62× | 32% | 12% | 24 |
+| Lower risk | Diagonal 12m Δ0.80 / short Δ0.20 | 111% | 354% | 1.45 | -40% | 19% | 0.74× | 25% | 24% | 24 |
+| Lower risk | Diagonal 12m Δ0.80 / short Δ0.30 | 98% | 300% | 1.36 | -40% | 19% | 0.62× | 30% | 24% | 24 |
+| Same risk | LEAP 6m Δ0.80, match stock | 141% | 498% | 1.51 | -42% | 18% | 1.00× | 18% | 12% | 210 |
+| Same risk | LEAP 6m Δ0.60, match stock | 152% | 552% | 1.50 | -42% | 18% | 1.00× | 18% | 8% | 206 |
+| Same risk | LEAP 12m Δ0.80, match stock | 140% | 490% | 1.49 | -40% | 17% | 1.00× | 17% | 24% | 433 |
+| Same risk | LEAP 12m Δ0.60, match stock | 160% | 594% | 1.59 | -44% | 19% | 1.00× | 19% | 26% | 411 |
+| Higher risk | LEAP 6m Δ0.80, 50% in calls | 179% | 703% | 1.58 | -42% | 18% | 1.26× | 14% | 12% | 210 |
+| Higher risk | LEAP 6m Δ0.60, 50% in calls | 271% | 1338% | 1.58 | -48% | 17% | 1.64× | 11% | 8% | 206 |
+| Higher risk | LEAP 12m Δ0.80, 50% in calls | 142% | 502% | 1.58 | -36% | 17% | 1.02× | 17% | 24% | 433 |
+| Higher risk | LEAP 12m Δ0.60, 50% in calls | 230% | 1030% | 1.81 | -43% | 19% | 1.33× | 14% | 26% | 411 |
+| Higher risk | LEAP 6m Δ0.80, 100% in calls | 387% | 2393% | 1.37 | -62% | 18% | 2.52× | 7% | 12% | 210 |
+| Higher risk | LEAP 6m Δ0.60, 100% in calls | 663% | 6114% | 1.36 | -72% | 17% | 3.28× | 5% | 8% | 206 |
+| Higher risk | LEAP 12m Δ0.80, 100% in calls | 314% | 1693% | 1.55 | -52% | 17% | 2.04× | 8% | 24% | 433 |
+| Higher risk | LEAP 12m Δ0.60, 100% in calls | 598% | 5084% | 1.93 | -49% | 20% | 2.67× | 7% | 26% | 411 |
 
-## rankmom_sp500.top5 (`rankmom_sp500.top5`, 174 windows)
+## SPY Rank Mom · IV (`rankmomiv_sp500.top5`, 205 windows)
 
-| Group | Method | CAGR | Total | Sharpe | Worst drop | Half-Kelly | Exposure | Position | No option | DTE |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Stock | Stock (same windows) | 82% | 231% | 1.14 | -39% | 16% | 1.00× | 16% | — | — |
-| Lower risk | Cash-secured put Δ-0.20 | 30% | 68% | 1.80 | -10% | 28% | 0.22× | 100% | 9% | 17 |
-| Lower risk | Cash-secured put Δ-0.30 | 42% | 102% | 1.44 | -15% | 27% | 0.31× | 85% | 9% | 17 |
-| Lower risk | Cash-secured put Δ-0.45 | 46% | 112% | 1.32 | -18% | 23% | 0.45× | 52% | 9% | 18 |
-| Lower risk | Covered call Δ0.10, ~21d | 64% | 167% | 1.14 | -33% | 16% | 0.88× | 18% | 6% | 21 |
-| Lower risk | Covered call Δ0.20, ~21d | 58% | 148% | 1.13 | -30% | 16% | 0.79× | 20% | 6% | 21 |
-| Lower risk | Covered call Δ0.30, ~21d | 53% | 135% | 1.18 | -28% | 16% | 0.70× | 24% | 6% | 21 |
-| Lower risk | Covered call Δ0.40, ~21d | 44% | 107% | 1.11 | -27% | 17% | 0.60× | 28% | 6% | 21 |
-| Lower risk | Covered call Δ0.50, ~21d | 38% | 90% | 1.10 | -22% | 18% | 0.50× | 36% | 6% | 21 |
-| Lower risk | Diagonal 6m Δ0.80 / short Δ0.20 | 78% | 215% | 1.41 | -31% | 16% | 0.74× | 22% | 9% | 24 |
-| Lower risk | Diagonal 6m Δ0.80 / short Δ0.30 | 74% | 203% | 1.51 | -28% | 17% | 0.62× | 27% | 9% | 24 |
-| Lower risk | Diagonal 12m Δ0.80 / short Δ0.20 | 80% | 224% | 1.30 | -36% | 17% | 0.74× | 23% | 24% | 24 |
-| Lower risk | Diagonal 12m Δ0.80 / short Δ0.30 | 74% | 204% | 1.33 | -35% | 17% | 0.62× | 27% | 24% | 24 |
-| Same risk | LEAP 6m Δ0.80, match stock | 91% | 262% | 1.18 | -40% | 15% | 1.00× | 15% | 9% | 210 |
-| Same risk | LEAP 6m Δ0.60, match stock | 108% | 331% | 1.29 | -42% | 15% | 1.00× | 15% | 6% | 203 |
-| Same risk | LEAP 12m Δ0.80, match stock | 96% | 281% | 1.22 | -43% | 16% | 1.00× | 16% | 24% | 425 |
-| Same risk | LEAP 12m Δ0.60, match stock | 101% | 305% | 1.28 | -41% | 18% | 1.00× | 18% | 27% | 409 |
-| Higher risk | LEAP 6m Δ0.80, 50% in calls | 90% | 262% | 1.04 | -45% | 14% | 1.35× | 10% | 9% | 210 |
-| Higher risk | LEAP 6m Δ0.60, 50% in calls | 143% | 486% | 1.13 | -53% | 13% | 1.87× | 7% | 6% | 203 |
-| Higher risk | LEAP 12m Δ0.80, 50% in calls | 97% | 286% | 1.27 | -40% | 15% | 1.08× | 14% | 24% | 425 |
-| Higher risk | LEAP 12m Δ0.60, 50% in calls | 126% | 411% | 1.34 | -42% | 18% | 1.46× | 12% | 27% | 409 |
-| Higher risk | LEAP 6m Δ0.80, 100% in calls | 150% | 523% | 0.84 | -69% | 14% | 2.70× | 5% | 9% | 210 |
-| Higher risk | LEAP 6m Δ0.60, 100% in calls | 266% | 1232% | 0.92 | -80% | 14% | 3.74× | 4% | 6% | 203 |
-| Higher risk | LEAP 12m Δ0.80, 100% in calls | 190% | 736% | 1.22 | -59% | 15% | 2.15× | 7% | 24% | 425 |
-| Higher risk | LEAP 12m Δ0.60, 100% in calls | 225% | 952% | 1.24 | -62% | 17% | 2.92× | 6% | 27% | 409 |
-
-## mom12_megacap.top5 (`mom12_megacap.top5`, 217 windows)
+Tracked picks: **Defensive** Cash-secured put Δ-0.20 (Sharpe 1.63, worst -16%) · **Balanced** LEAP 12m Δ0.60, 50% in calls (Sharpe 1.55, worst -40%) · **Aggressive** LEAP 12m Δ0.60, 100% in calls (Sharpe 1.59, worst -55%)
 
 | Group | Method | CAGR | Total | Sharpe | Worst drop | Half-Kelly | Exposure | Position | No option | DTE |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Stock | Stock (same windows) | 43% | 104% | 0.82 | -36% | 8% | 1.00× | 8% | — | — |
-| Lower risk | Cash-secured put Δ-0.20 | 18% | 39% | 0.93 | -11% | 16% | 0.21× | 76% | 0% | 17 |
-| Lower risk | Cash-secured put Δ-0.30 | 28% | 65% | 0.97 | -23% | 13% | 0.31× | 40% | 0% | 17 |
-| Lower risk | Cash-secured put Δ-0.45 | 30% | 68% | 0.88 | -25% | 9% | 0.45× | 21% | 0% | 17 |
-| Lower risk | Covered call Δ0.10, ~21d | 33% | 78% | 0.75 | -32% | 7% | 0.90× | 8% | 0% | 21 |
-| Lower risk | Covered call Δ0.20, ~21d | 28% | 65% | 0.71 | -29% | 7% | 0.80× | 9% | 0% | 21 |
-| Lower risk | Covered call Δ0.30, ~21d | 26% | 57% | 0.71 | -25% | 7% | 0.70× | 11% | 0% | 21 |
-| Lower risk | Covered call Δ0.40, ~21d | 22% | 50% | 0.69 | -22% | 8% | 0.60× | 13% | 0% | 21 |
-| Lower risk | Covered call Δ0.50, ~21d | 20% | 45% | 0.71 | -20% | 9% | 0.50× | 17% | 0% | 21 |
-| Lower risk | Diagonal 6m Δ0.80 / short Δ0.20 | 26% | 60% | 0.65 | -28% | 6% | 0.75× | 8% | 0% | 24 |
-| Lower risk | Diagonal 6m Δ0.80 / short Δ0.30 | 23% | 51% | 0.62 | -25% | 6% | 0.62× | 9% | 0% | 24 |
-| Lower risk | Diagonal 12m Δ0.80 / short Δ0.20 | 36% | 85% | 0.82 | -30% | 8% | 0.74× | 11% | 3% | 24 |
-| Lower risk | Diagonal 12m Δ0.80 / short Δ0.30 | 31% | 72% | 0.80 | -26% | 8% | 0.62× | 13% | 3% | 24 |
-| Same risk | LEAP 6m Δ0.80, match stock | 42% | 101% | 0.80 | -35% | 7% | 1.00× | 7% | 0% | 204 |
-| Same risk | LEAP 6m Δ0.60, match stock | 48% | 119% | 0.85 | -39% | 8% | 1.00× | 8% | 0% | 199 |
-| Same risk | LEAP 12m Δ0.80, match stock | 50% | 125% | 0.90 | -37% | 9% | 1.00× | 9% | 3% | 416 |
-| Same risk | LEAP 12m Δ0.60, match stock | 50% | 124% | 0.88 | -40% | 9% | 1.00× | 9% | 1% | 413 |
-| Higher risk | LEAP 6m Δ0.80, 50% in calls | 55% | 139% | 0.78 | -43% | 7% | 1.75× | 4% | 0% | 204 |
-| Higher risk | LEAP 6m Δ0.60, 50% in calls | 77% | 213% | 0.78 | -52% | 7% | 2.47× | 3% | 0% | 199 |
-| Higher risk | LEAP 12m Δ0.80, 50% in calls | 56% | 142% | 0.92 | -36% | 8% | 1.33× | 6% | 3% | 416 |
-| Higher risk | LEAP 12m Δ0.60, 50% in calls | 66% | 175% | 0.89 | -42% | 8% | 1.82× | 5% | 1% | 413 |
-| Higher risk | LEAP 6m Δ0.80, 100% in calls | 91% | 265% | 0.64 | -69% | 7% | 3.50× | 2% | 0% | 204 |
-| Higher risk | LEAP 6m Δ0.60, 100% in calls | 122% | 393% | 0.59 | -76% | 7% | 4.95× | 1% | 0% | 199 |
-| Higher risk | LEAP 12m Δ0.80, 100% in calls | 99% | 297% | 0.83 | -56% | 8% | 2.66× | 3% | 3% | 416 |
-| Higher risk | LEAP 12m Δ0.60, 100% in calls | 107% | 327% | 0.72 | -64% | 8% | 3.64× | 2% | 1% | 413 |
+| Stock | Stock (same windows) | 92% | 277% | 1.26 | -38% | 16% | 1.00× | 16% | — | — |
+| Lower risk | Cash-secured put Δ-0.20 | 30% | 71% | 1.63 | -16% | 27% | 0.22× | 100% | 11% | 17 |
+| Lower risk | Cash-secured put Δ-0.30 | 41% | 100% | 1.34 | -19% | 24% | 0.32× | 77% | 11% | 17 |
+| Lower risk | Cash-secured put Δ-0.45 | 45% | 114% | 1.28 | -21% | 22% | 0.44× | 49% | 11% | 17 |
+| Lower risk | Covered call Δ0.10, ~21d | 73% | 206% | 1.26 | -33% | 17% | 0.85× | 20% | 7% | 21 |
+| Lower risk | Covered call Δ0.20, ~21d | 59% | 157% | 1.14 | -32% | 16% | 0.79× | 20% | 7% | 21 |
+| Lower risk | Covered call Δ0.30, ~21d | 52% | 133% | 1.11 | -30% | 16% | 0.69× | 22% | 7% | 21 |
+| Lower risk | Covered call Δ0.40, ~21d | 45% | 114% | 1.09 | -29% | 16% | 0.60× | 26% | 7% | 21 |
+| Lower risk | Covered call Δ0.50, ~21d | 35% | 85% | 0.99 | -26% | 15% | 0.50× | 30% | 7% | 21 |
+| Lower risk | Diagonal 6m Δ0.80 / short Δ0.20 | 65% | 177% | 1.22 | -34% | 16% | 0.74× | 21% | 7% | 24 |
+| Lower risk | Diagonal 6m Δ0.80 / short Δ0.30 | 56% | 148% | 1.18 | -33% | 15% | 0.62× | 25% | 7% | 24 |
+| Lower risk | Diagonal 12m Δ0.80 / short Δ0.20 | 70% | 193% | 1.15 | -36% | 15% | 0.74× | 20% | 21% | 24 |
+| Lower risk | Diagonal 12m Δ0.80 / short Δ0.30 | 60% | 160% | 1.07 | -36% | 15% | 0.62× | 25% | 21% | 24 |
+| Same risk | LEAP 6m Δ0.80, match stock | 97% | 297% | 1.30 | -39% | 15% | 1.00× | 15% | 7% | 206 |
+| Same risk | LEAP 6m Δ0.60, match stock | 111% | 356% | 1.34 | -40% | 15% | 1.00× | 15% | 5% | 203 |
+| Same risk | LEAP 12m Δ0.80, match stock | 111% | 358% | 1.39 | -41% | 16% | 1.00× | 16% | 21% | 434 |
+| Same risk | LEAP 12m Δ0.60, match stock | 115% | 374% | 1.42 | -41% | 17% | 1.00× | 17% | 25% | 413 |
+| Higher risk | LEAP 6m Δ0.80, 50% in calls | 107% | 337% | 1.23 | -45% | 15% | 1.34× | 11% | 7% | 206 |
+| Higher risk | LEAP 6m Δ0.60, 50% in calls | 163% | 615% | 1.27 | -54% | 14% | 1.81× | 7% | 5% | 203 |
+| Higher risk | LEAP 12m Δ0.80, 50% in calls | 111% | 356% | 1.43 | -38% | 16% | 1.08× | 15% | 21% | 434 |
+| Higher risk | LEAP 12m Δ0.60, 50% in calls | 154% | 563% | 1.55 | -40% | 18% | 1.42× | 12% | 25% | 413 |
+| Higher risk | LEAP 6m Δ0.80, 100% in calls | 217% | 944% | 1.09 | -68% | 15% | 2.68× | 5% | 7% | 206 |
+| Higher risk | LEAP 6m Δ0.60, 100% in calls | 344% | 1967% | 1.07 | -78% | 14% | 3.62× | 4% | 5% | 203 |
+| Higher risk | LEAP 12m Δ0.80, 100% in calls | 251% | 1179% | 1.47 | -55% | 16% | 2.15× | 7% | 21% | 434 |
+| Higher risk | LEAP 12m Δ0.60, 100% in calls | 334% | 1874% | 1.59 | -55% | 18% | 2.85× | 6% | 25% | 413 |
 
-## laggards_mega10.top2.hold21 (`laggards_mega10.top2.hold21`, 416 windows)
+## MDY Improving Fund. & Rank (`emergingall_sp400.top5`, 268 windows)
+
+Tracked picks: **Defensive** Cash-secured put Δ-0.45 (Sharpe 1.48, worst -7%) · **Balanced** LEAP 6m Δ0.60, match stock (Sharpe 1.35, worst -31%) · **Aggressive** LEAP 6m Δ0.60, 50% in calls (Sharpe 1.23, worst -38%)
 
 | Group | Method | CAGR | Total | Sharpe | Worst drop | Half-Kelly | Exposure | Position | No option | DTE |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Stock | Stock (same windows) | 51% | 129% | 1.51 | -19% | 23% | 1.00× | 23% | — | — |
-| Lower risk | Cash-secured put Δ-0.20 | 13% | 29% | 1.20 | -6% | 36% | 0.22× | 100% | 0% | 38 |
-| Lower risk | Cash-secured put Δ-0.30 | 17% | 37% | 1.26 | -8% | 32% | 0.31× | 100% | 0% | 35 |
-| Lower risk | Cash-secured put Δ-0.45 | 24% | 53% | 1.40 | -10% | 29% | 0.45× | 65% | 0% | 38 |
-| Lower risk | Covered call Δ0.10, ~21d | 45% | 110% | 1.50 | -17% | 23% | 0.90× | 26% | 0% | 21 |
-| Lower risk | Covered call Δ0.20, ~21d | 39% | 93% | 1.47 | -15% | 24% | 0.80× | 30% | 0% | 21 |
-| Lower risk | Covered call Δ0.30, ~21d | 34% | 80% | 1.46 | -14% | 24% | 0.70× | 34% | 0% | 21 |
-| Lower risk | Covered call Δ0.40, ~21d | 28% | 64% | 1.36 | -13% | 24% | 0.60× | 40% | 0% | 21 |
-| Lower risk | Covered call Δ0.50, ~21d | 24% | 53% | 1.33 | -11% | 25% | 0.50× | 50% | 0% | 21 |
-| Lower risk | Diagonal 6m Δ0.80 / short Δ0.20 | 38% | 89% | 1.54 | -14% | 21% | 0.75× | 29% | 0% | 24 |
-| Lower risk | Diagonal 6m Δ0.80 / short Δ0.30 | 31% | 73% | 1.52 | -13% | 21% | 0.62× | 34% | 0% | 24 |
-| Lower risk | Diagonal 12m Δ0.80 / short Δ0.20 | 37% | 87% | 1.48 | -14% | 22% | 0.75× | 29% | 0% | 24 |
-| Lower risk | Diagonal 12m Δ0.80 / short Δ0.30 | 31% | 71% | 1.44 | -12% | 21% | 0.62× | 34% | 0% | 24 |
-| Same risk | LEAP 6m Δ0.80, match stock | 52% | 131% | 1.55 | -18% | 22% | 1.00× | 22% | 0% | 199 |
-| Same risk | LEAP 6m Δ0.60, match stock | 50% | 125% | 1.45 | -18% | 20% | 1.00× | 20% | 0% | 198 |
-| Same risk | LEAP 12m Δ0.80, match stock | 51% | 127% | 1.50 | -17% | 22% | 1.00× | 22% | 0% | 408 |
-| Same risk | LEAP 12m Δ0.60, match stock | 51% | 127% | 1.46 | -18% | 21% | 1.00× | 21% | 0% | 406 |
-| Higher risk | LEAP 6m Δ0.80, 50% in calls | 103% | 310% | 1.45 | -34% | 20% | 2.03× | 10% | 0% | 199 |
-| Higher risk | LEAP 6m Δ0.60, 50% in calls | 145% | 497% | 1.30 | -46% | 18% | 2.88× | 6% | 0% | 198 |
-| Higher risk | LEAP 12m Δ0.80, 50% in calls | 72% | 196% | 1.43 | -26% | 20% | 1.52× | 13% | 0% | 408 |
-| Higher risk | LEAP 12m Δ0.60, 50% in calls | 102% | 306% | 1.37 | -35% | 19% | 2.06× | 9% | 0% | 406 |
-| Higher risk | LEAP 6m Δ0.80, 100% in calls | 253% | 1141% | 1.32 | -61% | 20% | 4.06× | 5% | 0% | 199 |
-| Higher risk | LEAP 6m Δ0.60, 100% in calls | 359% | 1995% | 1.09 | -77% | 18% | 5.76× | 3% | 0% | 198 |
-| Higher risk | LEAP 12m Δ0.80, 100% in calls | 166% | 604% | 1.33 | -48% | 20% | 3.03× | 6% | 0% | 408 |
-| Higher risk | LEAP 12m Δ0.60, 100% in calls | 246% | 1089% | 1.23 | -62% | 19% | 4.13× | 5% | 0% | 406 |
+| Stock | Stock (same windows) | 44% | 111% | 1.16 | -30% | 10% | 1.00× | 10% | — | — |
+| Lower risk | Cash-secured put Δ-0.20 | 11% | 24% | 1.14 | -7% | 23% | 0.24× | 94% | 57% | 17 |
+| Lower risk | Cash-secured put Δ-0.30 | 12% | 25% | 1.10 | -7% | 21% | 0.31× | 66% | 57% | 17 |
+| Lower risk | Cash-secured put Δ-0.45 | 17% | 38% | 1.48 | -7% | 23% | 0.43× | 54% | 57% | 17 |
+| Lower risk | Covered call Δ0.10, ~21d | 29% | 67% | 0.90 | -28% | 9% | 0.81× | 11% | 38% | 24 |
+| Lower risk | Covered call Δ0.20, ~21d | 28% | 66% | 0.91 | -28% | 9% | 0.77× | 11% | 38% | 24 |
+| Lower risk | Covered call Δ0.30, ~21d | 22% | 51% | 0.73 | -26% | 8% | 0.69× | 12% | 38% | 24 |
+| Lower risk | Covered call Δ0.40, ~21d | 20% | 46% | 0.70 | -25% | 8% | 0.60× | 13% | 38% | 24 |
+| Lower risk | Covered call Δ0.50, ~21d | 17% | 38% | 0.59 | -23% | 7% | 0.52× | 14% | 38% | 24 |
+| Lower risk | Diagonal 6m Δ0.80 / short Δ0.20 | 36% | 86% | 1.05 | -30% | 10% | 0.76× | 13% | 63% | 185 |
+| Lower risk | Diagonal 6m Δ0.80 / short Δ0.30 | 32% | 75% | 0.94 | -28% | 9% | 0.67× | 14% | 63% | 185 |
+| Lower risk | Diagonal 12m Δ0.80 / short Δ0.20 | 49% | 124% | 1.33 | -26% | 11% | 0.75× | 15% | 76% | 373 |
+| Lower risk | Diagonal 12m Δ0.80 / short Δ0.30 | 45% | 113% | 1.26 | -25% | 11% | 0.63× | 18% | 76% | 373 |
+| Same risk | LEAP 6m Δ0.80, match stock | 51% | 132% | 1.29 | -31% | 11% | 1.00× | 11% | 63% | 214 |
+| Same risk | LEAP 6m Δ0.60, match stock | 56% | 145% | 1.35 | -31% | 12% | 1.00× | 12% | 48% | 218 |
+| Same risk | LEAP 12m Δ0.80, match stock | 49% | 125% | 1.25 | -28% | 11% | 1.00× | 11% | 76% | 458 |
+| Same risk | LEAP 12m Δ0.60, match stock | 46% | 116% | 1.18 | -29% | 10% | 1.00× | 10% | 77% | 437 |
+| Higher risk | LEAP 6m Δ0.80, 50% in calls | 54% | 141% | 1.18 | -35% | 11% | 1.38× | 8% | 63% | 214 |
+| Higher risk | LEAP 6m Δ0.60, 50% in calls | 73% | 205% | 1.23 | -38% | 11% | 1.86× | 6% | 48% | 218 |
+| Higher risk | LEAP 12m Δ0.80, 50% in calls | 48% | 120% | 1.21 | -29% | 11% | 1.00× | 10% | 76% | 458 |
+| Higher risk | LEAP 12m Δ0.60, 50% in calls | 46% | 117% | 1.10 | -33% | 10% | 1.52× | 7% | 77% | 437 |
+| Higher risk | LEAP 6m Δ0.80, 100% in calls | 82% | 237% | 1.03 | -50% | 11% | 2.75× | 4% | 63% | 214 |
+| Higher risk | LEAP 6m Δ0.60, 100% in calls | 128% | 435% | 1.07 | -58% | 11% | 3.71× | 3% | 48% | 218 |
+| Higher risk | LEAP 12m Δ0.80, 100% in calls | 57% | 152% | 1.11 | -38% | 10% | 2.01× | 5% | 76% | 458 |
+| Higher risk | LEAP 12m Δ0.60, 100% in calls | 51% | 130% | 0.91 | -42% | 9% | 3.04× | 3% | 77% | 437 |
+
+## Mega Laggards (`laggards_mega10.top2.hold21`, 424 windows)
+
+Tracked picks: **Defensive** Diagonal 6m Δ0.80 / short Δ0.30 (Sharpe 1.47, worst -13%) · **Balanced** LEAP 6m Δ0.80, match stock (Sharpe 1.54, worst -18%) · **Aggressive** LEAP 6m Δ0.80, 50% in calls (Sharpe 1.46, worst -34%)
+
+| Group | Method | CAGR | Total | Sharpe | Worst drop | Half-Kelly | Exposure | Position | No option | DTE |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Stock | Stock (same windows) | 51% | 131% | 1.51 | -19% | 23% | 1.00× | 23% | — | — |
+| Lower risk | Cash-secured put Δ-0.20 | 13% | 29% | 1.19 | -6% | 36% | 0.22× | 100% | 0% | 38 |
+| Lower risk | Cash-secured put Δ-0.30 | 17% | 38% | 1.25 | -8% | 32% | 0.31× | 100% | 0% | 35 |
+| Lower risk | Cash-secured put Δ-0.45 | 23% | 53% | 1.38 | -10% | 29% | 0.45× | 65% | 0% | 38 |
+| Lower risk | Covered call Δ0.10, ~21d | 45% | 111% | 1.49 | -17% | 23% | 0.90× | 26% | 0% | 21 |
+| Lower risk | Covered call Δ0.20, ~21d | 38% | 93% | 1.45 | -15% | 24% | 0.80× | 29% | 0% | 21 |
+| Lower risk | Covered call Δ0.30, ~21d | 33% | 80% | 1.43 | -14% | 24% | 0.70× | 34% | 0% | 21 |
+| Lower risk | Covered call Δ0.40, ~21d | 28% | 64% | 1.33 | -13% | 24% | 0.60× | 40% | 0% | 21 |
+| Lower risk | Covered call Δ0.50, ~21d | 23% | 53% | 1.29 | -11% | 25% | 0.50× | 50% | 0% | 21 |
+| Lower risk | Diagonal 6m Δ0.80 / short Δ0.20 | 37% | 89% | 1.50 | -14% | 21% | 0.75× | 28% | 0% | 24 |
+| Lower risk | Diagonal 6m Δ0.80 / short Δ0.30 | 31% | 72% | 1.47 | -13% | 21% | 0.62× | 34% | 0% | 24 |
+| Lower risk | Diagonal 12m Δ0.80 / short Δ0.20 | 36% | 88% | 1.45 | -14% | 21% | 0.75× | 28% | 0% | 24 |
+| Lower risk | Diagonal 12m Δ0.80 / short Δ0.30 | 30% | 71% | 1.40 | -12% | 21% | 0.62× | 34% | 0% | 24 |
+| Same risk | LEAP 6m Δ0.80, match stock | 52% | 133% | 1.54 | -18% | 21% | 1.00× | 21% | 0% | 199 |
+| Same risk | LEAP 6m Δ0.60, match stock | 50% | 129% | 1.45 | -18% | 20% | 1.00× | 20% | 0% | 197 |
+| Same risk | LEAP 12m Δ0.80, match stock | 51% | 130% | 1.50 | -17% | 21% | 1.00× | 21% | 0% | 409 |
+| Same risk | LEAP 12m Δ0.60, match stock | 50% | 128% | 1.44 | -18% | 21% | 1.00× | 21% | 0% | 408 |
+| Higher risk | LEAP 6m Δ0.80, 50% in calls | 103% | 321% | 1.46 | -34% | 20% | 2.03× | 10% | 0% | 199 |
+| Higher risk | LEAP 6m Δ0.60, 50% in calls | 147% | 526% | 1.32 | -46% | 18% | 2.85× | 6% | 0% | 197 |
+| Higher risk | LEAP 12m Δ0.80, 50% in calls | 73% | 204% | 1.44 | -26% | 20% | 1.51× | 13% | 0% | 409 |
+| Higher risk | LEAP 12m Δ0.60, 50% in calls | 103% | 320% | 1.39 | -35% | 19% | 2.05× | 9% | 0% | 408 |
+| Higher risk | LEAP 6m Δ0.80, 100% in calls | 253% | 1197% | 1.32 | -61% | 19% | 4.05× | 5% | 0% | 199 |
+| Higher risk | LEAP 6m Δ0.60, 100% in calls | 365% | 2165% | 1.10 | -77% | 18% | 5.70× | 3% | 0% | 197 |
+| Higher risk | LEAP 12m Δ0.80, 100% in calls | 167% | 638% | 1.34 | -48% | 19% | 3.02× | 6% | 0% | 409 |
+| Higher risk | LEAP 12m Δ0.60, 100% in calls | 247% | 1155% | 1.24 | -62% | 18% | 4.11× | 4% | 0% | 408 |

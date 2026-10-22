@@ -15,6 +15,15 @@ All fills are at the traded price (mid of the day's open and close; no spread ha
   no option     share of windows that never found a qualifying contract (LEAP/diagonal hold the stock
                 until one appears)
 
+Tracked picks (`pick_tiers`, the rule behind the 2026-10-09 choices, written down 2026-10-22):
+  Defensive     best Sharpe among the lower-risk methods (puts, covered calls, diagonals) whose worst drop
+                is at most 75% of the stock's
+  Balanced      best Sharpe among the remaining methods whose worst drop is no more than 5 points deeper
+                than the stock's
+  Aggressive    best Sharpe among the remaining higher-risk methods (calls with 50% / 100% of capital)
+The 2026-10-09 picks were made by eye; on that grid this rule reproduces 7 of the 12 (all six S&P 500 picks;
+and Megacap Leaders' Defensive; it differs on Megacap Leaders' Balanced / Aggressive and all three Laggards picks).
+
     python -m market.evaluate.option_grid [base ...]
 """
 
@@ -139,6 +148,46 @@ def run_base(base_id: str) -> dict:
             "end": str(sessions[-1].date()), "seconds": round(time.time() - t0), "rows": rows}
 
 
+def pick_tiers(rows: list[dict]) -> dict[str, dict | None]:
+    """Defensive / Balanced / Aggressive picks from one base's grid rows (see the module docstring)."""
+    stock = next(r for r in rows if r["method"] is None)
+    options = [r for r in rows if r["method"] is not None and r["sharpe"] is not None]
+    best = lambda rs: max(rs, key=lambda r: r["sharpe"]) if rs else None
+    defensive = best([r for r in options if r["group"] == "Lower risk"
+                      and r["max_drawdown"] >= 0.75 * stock["max_drawdown"]])
+    rest = [r for r in options if r is not defensive]
+    balanced = best([r for r in rest if r["max_drawdown"] >= stock["max_drawdown"] - 0.05])
+    rest = [r for r in rest if r is not balanced]
+    aggressive = best([r for r in rest if r["group"] == "Higher risk"])
+    return {"Defensive": defensive, "Balanced": balanced, "Aggressive": aggressive}
+
+
+def method_id(m: dict) -> str:
+    """strategies.yaml id for a grid method, e.g. csp20, cc30, diag6m30, leap12m60h (h = 50%, f = 100%, m = match)."""
+    inst = m["instrument"]
+    if inst == "csp":
+        return f"csp{round(abs(m['delta']) * 100)}"
+    if inst == "covered_call":
+        return f"cc{round(m['delta'] * 100)}"
+    expiry = "6m" if m["leap_dte"]["min"] == 180 else "12m"
+    if inst == "diagonal":
+        return f"diag{expiry}{round(m['short_delta'] * 100)}"
+    size = {"delta": "m", 0.5: "h", 1.0: "f"}[m["sizing"]]
+    return f"leap{expiry}{round(m['delta'] * 100)}{size}"
+
+
+def yaml_entry(m: dict, tier: str) -> str:
+    """The strategies.yaml `option_methods.bases` line for a grid method."""
+    fields = {"id": method_id(m), "tier": tier, "instrument": m["instrument"], "delta": m["delta"]}
+    if m["instrument"] in ("leap", "diagonal"):
+        fields["expiry"] = "6m" if m["leap_dte"]["min"] == 180 else "12m"
+    if m["instrument"] == "diagonal":
+        fields["short_delta"] = m["short_delta"]
+    if m["instrument"] in ("leap", "diagonal"):
+        fields["sizing"] = m["sizing"]
+    return "{" + ", ".join(f"{k}: {v}" for k, v in fields.items()) + "}"
+
+
 def _pct(v, digits=0):
     return "—" if v is None else f"{v * 100:.{digits}f}%"
 
@@ -153,7 +202,10 @@ def to_markdown(results: list[dict], names: dict) -> str:
              "the share of a portfolio per position once leverage is counted. "
              "LEAP/diagonal windows hold the stock until a qualifying call appears ('no option' = never).", ""]
     for res in results:
+        picks = pick_tiers(res["rows"])
         lines += [f"## {names.get(res['base'], res['base'])} (`{res['base']}`, {res['windows']} windows)", "",
+                  "Tracked picks: " + " · ".join(f"**{t}** {r['name']} (Sharpe {r['sharpe']:.2f}, worst {_pct(r['max_drawdown'])})"
+                                                 if r else f"**{t}** none" for t, r in picks.items()), "",
                   "| Group | Method | CAGR | Total | Sharpe | Worst drop | Half-Kelly | Exposure | Position | No option | DTE |",
                   "|---|---|---|---|---|---|---|---|---|---|---|"]
         for r in res["rows"]:
@@ -173,11 +225,14 @@ def main(argv: list[str]) -> None:
     bases = argv or list(dict.fromkeys(s.base for s in strategies if s.base))
     with ProcessPoolExecutor(max_workers=len(bases)) as pool:
         results = list(pool.map(run_base, bases))
-    names = {s.id: s.id for s in strategies}
+    from market.categories.families import variant
+    names = {s.id: variant(s.category).short for s in strategies}
     (ROOT / "data" / "options_grid.json").write_text(json.dumps(results, indent=1))
     (ROOT / "docs" / "options_grid.md").write_text(to_markdown(results, names))
     for r in results:
         print(f"{r['base']}: {len(r['rows'])} methods, {r['seconds']}s")
+        for tier, row in pick_tiers(r["rows"]).items():
+            print(f"      - {yaml_entry(row['method'], tier)}" if row else f"      # {tier}: none")
 
 
 if __name__ == "__main__":
