@@ -26,7 +26,7 @@ import pandas as pd
 import market.categories.catalog  # noqa: F401  (registers categories)
 from market.categories.registry import REGISTRY
 from market.config import config, directory
-from market.reports import export_newsfeed, export_options, export_profiles, export_smartmoney
+from market.reports import export_newsfeed, export_options, export_profiles, export_smartmoney, site_lock
 from market.data import watchlists
 from market.evaluate.engine import load_strategies
 from market.research import lead_time
@@ -88,9 +88,14 @@ def _clean(value):
     return value
 
 
+_LOCK: site_lock.Lock | None = None          # set by export() when a site pass phrase is configured
+
+
 def _write(target, payload) -> int:
     target.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(_clean(payload), separators=(",", ":"), default=str, allow_nan=False)
+    if _LOCK is not None:
+        text = _LOCK.seal_text(text)
     target.write_text(text)
     return len(text)
 
@@ -120,9 +125,14 @@ def current_tickers(con: duckdb.DuckDBPyConnection) -> dict[str, str]:
 
 
 def export() -> dict:
+    global _LOCK
     out_dir = directory("site_out")
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True)
+    # Whole-site lock (market.reports.site_lock): every data file is encrypted; lock.json stays public.
+    _LOCK = site_lock.from_env()
+    if _LOCK is not None:
+        (out_dir / "lock.json").write_text(json.dumps(_LOCK.manifest()))
     con = connect()
     sizes: dict[str, int] = {}
     key_of = current_tickers(con)
@@ -231,8 +241,8 @@ def export() -> dict:
     sizes["options"] = _write(out_dir / "options.json", export_options.build(
         con, panel, all_strategies, metrics_by, navs, session_index, key_of, strategy_label))
 
-    # ---------------------------------------------------------------- newsfeed (encrypted when NEWSFEED_PASSWORD is set)
-    sizes["news"] = _write(out_dir / "news.json", export_newsfeed.export(con, panel, key_of))
+    # ---------------------------------------------------------------- newsfeed
+    sizes["news"] = _write(out_dir / "news.json", export_newsfeed.build(con, panel, key_of))
 
     # ---------------------------------------------------------------- stocks
     first_report = min(c["first"] for c in category_meta)

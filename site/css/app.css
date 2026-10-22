@@ -240,3 +240,4 @@ tr.beats td { background: var(--up-wash); }
 .reasons .plus { color: var(--up); font-weight: 600; }
 .reasons .minus { color: var(--down); font-weight: 600; }
 details.small-moves summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 8px; }
+.gate { max-width: 560px; margin: 48px auto; }

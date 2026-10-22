@@ -12,15 +12,12 @@
   4. **Reports.** Per report: Buy / Add / Trim / Sell / Hold per stock vs the previous report, with each
      list's reason and, for positions a list closes, that trade's result vs SPY.
 
-Encrypted with NEWSFEED_PASSWORD (.env) when set: AES-256-GCM, key from PBKDF2-SHA256, decrypted in the
-browser with WebCrypto; otherwise written in the clear.
+Like every data file, it is encrypted when the site pass phrase is set (`market.reports.site_lock`).
 """
 
 from __future__ import annotations
 
-import base64
 import json
-import os
 from datetime import datetime
 
 import pandas as pd
@@ -28,14 +25,13 @@ import pandas as pd
 from market.categories.option_flow import OptionFlow, iv_table
 from market.categories.registry import REGISTRY
 from market.categories.short_interest import ShortInterest, crowding
-from market.config import config, secret
+from market.config import config
 from market.evaluate.engine import load_strategies
 from market.evaluate.metrics import performance
 from market.methods.hold_rules import fill_price
 from market.reports.snapshot import upcoming_report
 from market.research.common import members_frame
 
-PBKDF2_ITERATIONS = 250_000
 HOLDS = ("while_listed", "fixed_hold")
 FILTER_LABEL = {"short_interest": "short-interest filter", "iv": "IV filter"}
 
@@ -398,23 +394,3 @@ def _exit_reason(s, e, sid, cur, by_cat, empty, filter_reading) -> str:
     rows = by_cat.get(e["base"] or s.category, empty)
     now = rows[(rows["report_date"] == cur) & (rows["security_id"] == sid)]
     return f"fell to #{int(now['rank'].iloc[0])} on {e['base_name'] or e['name']}" if not now.empty else f"no longer on {e['base_name'] or e['name']}"
-
-
-def seal(payload: dict, password: str | None) -> dict:
-    """Encrypt the payload for the browser (AES-256-GCM, PBKDF2-SHA256 key), or wrap it in the clear."""
-    if not password:
-        return {"encrypted": False, "data": payload}
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
-    salt, iv = os.urandom(16), os.urandom(12)
-    key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=PBKDF2_ITERATIONS).derive(password.encode())
-    ct = AESGCM(key).encrypt(iv, json.dumps(payload, separators=(",", ":"), default=str).encode(), None)
-    b64 = lambda b: base64.b64encode(b).decode()                                          # noqa: E731
-    return {"encrypted": True, "kdf": "PBKDF2-SHA256", "iterations": PBKDF2_ITERATIONS,
-            "salt": b64(salt), "iv": b64(iv), "ciphertext": b64(ct)}
-
-
-def export(con, panel, key_of: dict) -> dict:
-    return seal(build(con, panel, key_of), secret("NEWSFEED_PASSWORD", required=False))

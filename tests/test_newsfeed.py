@@ -4,21 +4,22 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from market.reports.export_newsfeed import holdings, seal
+from market.reports.export_newsfeed import holdings
 from market.reports.snapshot import upcoming_report
 
 
-def test_seal_round_trip_and_clear_mode():
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    payload = {"reports": [{"date": "2026-10-23", "actions": []}]}
-    assert seal(payload, None) == {"encrypted": False, "data": payload}
-    box = seal(payload, "s3cret")
-    assert box["encrypted"] and "reports" not in json.dumps(box)
-    b = lambda s: base64.b64decode(s)                                                     # noqa: E731
-    key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=b(box["salt"]), iterations=box["iterations"]).derive(b"s3cret")
-    assert json.loads(AESGCM(key).decrypt(b(box["iv"]), b(box["ciphertext"]), None)) == payload
+def test_site_lock_round_trip_and_manifest():
+    import base64
+
+    from market.reports.site_lock import CHECK, Lock
+    lock = Lock("s3cret phrase", iterations=1000)
+    text = json.dumps({"reports": [{"date": "2026-10-23"}]})
+    sealed = lock.seal_text(text)
+    assert "reports" not in sealed and json.loads(sealed)["v"] == 1
+    assert lock.open_text(sealed) == text
+    m = lock.manifest()
+    other = Lock("s3cret phrase", salt=base64.b64decode(m["salt"]), iterations=m["iterations"])
+    assert other._aead.decrypt(base64.b64decode(m["check"]["iv"]), base64.b64decode(m["check"]["ct"]), None) == CHECK
 
 
 def _snaps(rows):

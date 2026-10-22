@@ -2,10 +2,54 @@ import { lineChart, sparkline } from "./chart.js";
 
 // ------------------------------------------------------------------ data & formatting
 const cache = new Map();
+let SITE_KEY = null;                      // AES-GCM key when the site is locked (data/lock.json present)
+const b64bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function openFile(o) {
+  if (!(o && o.v === 1 && o.ct)) return o;               // not encrypted
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64bytes(o.iv) }, SITE_KEY, b64bytes(o.ct));
+  const text = await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  return JSON.parse(text);
+}
 const load = (path) => {
-  if (!cache.has(path)) cache.set(path, fetch(`data/${path}`).then((r) => (r.ok ? r.json() : null)));
+  if (!cache.has(path)) cache.set(path, fetch(`data/${path}`).then((r) => (r.ok ? r.json() : null)).then(openFile));
   return cache.get(path);
 };
+
+async function deriveKey(lock, phrase) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(phrase), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64bytes(lock.salt), iterations: lock.iterations, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64bytes(lock.check.iv) }, key, b64bytes(lock.check.ct));   // throws if wrong
+  return key;
+}
+
+/** Ask for the site pass phrase (remembered for this browser tab) and set SITE_KEY. */
+function unlockSite(lock) {
+  return new Promise(async (resolve) => {
+    const remembered = (() => { try { return sessionStorage.getItem("site-pass"); } catch { return null; } })();
+    if (remembered) {
+      try { SITE_KEY = await deriveKey(lock, remembered); return resolve(); } catch {}
+    }
+    const main = document.querySelector("main");
+    const input = h("input", { type: "password", placeholder: "Pass phrase", "aria-label": "Pass phrase", autocomplete: "current-password" });
+    const msg = h("span", { class: "muted small" });
+    const go = async () => {
+      msg.textContent = "Checking…";
+      try {
+        SITE_KEY = await deriveKey(lock, input.value);
+        try { sessionStorage.setItem("site-pass", input.value); } catch {}
+        main.textContent = "";
+        resolve();
+      } catch { msg.textContent = "That pass phrase didn't work."; }
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    main.textContent = "";
+    main.append(h("div", { class: "gate" }, h("h1", {}, "Market Lab"), caveat(),
+      h("p", {}, "This site is private. Enter the pass phrase to continue."),
+      h("div", { class: "unlock" }, input, h("button", { onclick: go }, "Unlock"), msg)));
+    input.focus();
+  });
+}
 const pct = (v, digits = 1, signed = false) =>
   v == null ? "—" : `${signed && v > 0 ? "+" : ""}${(v * 100).toFixed(digits)}%`;
 const num = (v, digits = 2) => (v == null ? "—" : v.toFixed(digits));
@@ -1102,41 +1146,15 @@ function caveat() {
       "Nothing here is a recommendation to buy or sell any security. Do not trade on it."));
 }
 
-async function decryptNews(file, password) {
-  const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
-  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: bytes(file.salt), iterations: file.iterations, hash: "SHA-256" },
-    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(file.iv) }, key, bytes(file.ciphertext));
-  return JSON.parse(new TextDecoder().decode(plain));
-}
-
 async function newsPage(root) {
   root.append(caveat(), h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Newsfeed"),
     h("p", { class: "lede" }, "What a portfolio following the strategies below would do at each report, reconciled across strategies: one position per stock, " +
       "sized by the strategies that hold it. Reports publish before the open on Tuesdays and Fridays (computed the evening before)."))));
-  const file = await load("news.json");
+  const data = await load("news.json");
   const body = h("div");
   root.appendChild(body);
-  if (!file) return body.appendChild(h("p", { class: "empty" }, "No newsfeed yet: it is written by the next export."));
-  if (!file.encrypted) return renderNews(body, file.data);
-  const remember = (() => { try { return sessionStorage.getItem("news-pw"); } catch { return null; } })();
-  const unlock = async (pw) => {
-    try {
-      const data = await decryptNews(file, pw);
-      try { sessionStorage.setItem("news-pw", pw); } catch {}
-      body.textContent = "";
-      renderNews(body, data);
-      return true;
-    } catch { return false; }
-  };
-  if (remember && await unlock(remember)) return;
-  const input = h("input", { type: "password", placeholder: "Password", "aria-label": "Newsfeed password", autocomplete: "current-password" });
-  const msg = h("span", { class: "muted small" });
-  const go = async () => { msg.textContent = "Checking…"; if (!(await unlock(input.value))) msg.textContent = "That password didn't work."; };
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
-  body.append(h("p", {}, "This page is encrypted."), h("div", { class: "unlock" }, input, h("button", { onclick: go }, "Unlock"), msg));
-  input.focus();
+  if (!data) return body.appendChild(h("p", { class: "empty" }, "No newsfeed yet: it is written by the next export."));
+  renderNews(body, data);
 }
 
 const ACTION_CLASS = { Buy: "new", Add: "up", Trim: "down", Sell: "down", Hold: "flat" };
@@ -1304,11 +1322,15 @@ async function route() {
 }
 
 (async function start() {
+  const lock = await fetch("data/lock.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (lock) await unlockSite(lock);
   META = await load("meta.json");
   splitLab(META);
   STOCKS = new Set(META.stocks.map((s) => s[0]));
   navEl = shell();
-  document.querySelector("footer").textContent = `Generated ${META.generated_at.replace("T", " ")} · data through ${fmtDate(META.data_through)} · research tool, not investment advice`;
+  const footer = document.querySelector("footer");
+  footer.textContent = `Generated ${META.generated_at.replace("T", " ")} · data through ${fmtDate(META.data_through)} · research tool, not investment advice`;
+  if (lock) footer.append(" · ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); try { sessionStorage.removeItem("site-pass"); } catch {} location.reload(); } }, "Lock"));
   window.addEventListener("hashchange", route);
   route();
 })();

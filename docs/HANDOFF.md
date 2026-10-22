@@ -161,9 +161,12 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
   Sizing: a stock's list half-Kelly; duplicates appear on every list and are sized once at the lowest; scaled
   proportionally to 100% when the total is larger, else the remainder is SPY (called out); cap 30%. Report
   history: Buy / Add / Trim / Sell / Hold with reasons and closed results vs SPY. Caveat banner on top.
-  **Encrypted** (AES-256-GCM, PBKDF2) when `NEWSFEED_PASSWORD` is set in `.env`; without it news.json is in the
-  clear — set it before publishing. A GitHub secret only reaches GitHub Actions; this build runs locally, so the
-  password goes in `.env` (and in a secret too only if the build moves to Actions).
+- **Whole-site lock (2026-10-22):** set `SITE_PASSWORD=<pass phrase>` in `.env` (`NEWSFEED_PASSWORD` also works).
+  Every data file is gzipped and AES-256-GCM encrypted (`market.reports.site_lock`, key via PBKDF2-SHA256, fresh
+  salt each export); `site/data/lock.json` (public) lets the browser check the phrase. The site asks for it first,
+  remembers it for the browser tab, and has a footer "Lock" link. The code stays public; the data is unreadable
+  without the phrase. Encrypted data is ~11 MB vs ~32 MB plain. Without the phrase the export is in the clear.
+  The phrase must be on the Mac (the build runs there); a GitHub secret is only useful if the build moves to Actions.
 - New Lab strategy **S&P 400 Improving Fundamentals & Rank** (`emergingall_sp400`): Emerging Leaders without
   the top-25 exclusion — 42% a year, Sharpe 1.21 from 2022-11 (Emerging 34%, 1.08), 77% overlap with Emerging.
   It replaces Emerging Leaders in the feed; Emerging Leaders stays in the Lab.

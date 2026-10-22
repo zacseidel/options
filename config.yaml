@@ -76,8 +76,7 @@ evaluation:
 #   allocation   each stock gets its list's half-Kelly (per position, from the list's closed trades); a stock
 #                on several lists gets the lowest of their half-Kellys; the total is scaled to 100% if it
 #                is larger, else the rest is held in SPY; no stock above `cap`
-# The data file is encrypted when NEWSFEED_PASSWORD is set in .env (AES-256-GCM, PBKDF2-SHA256 key); the page
-# asks for the password and decrypts in the browser.
+# The whole site's data is encrypted when SITE_PASSWORD is set in .env (market.reports.site_lock).
 newsfeed:
   reports: 16                   # report dates shown, newest first (the upcoming one included)
   min_change: 0.005             # weight changes smaller than this are shown as Hold
