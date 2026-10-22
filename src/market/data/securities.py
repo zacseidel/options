@@ -86,13 +86,14 @@ def extend() -> dict:
     known = {r[0] for r in con.execute("SELECT DISTINCT ticker FROM ticker_history").fetchall()}
     wanted = signal_tickers(con) - known
     tried = {r[0] for r in con.execute("SELECT key FROM fetch_log WHERE source = 'security_lookup'").fetchall()}
-    wanted -= tried
+    # Names held in the Decisions log may be ETFs (SCHD, QQQ…): resolve those like benchmarks, ETFs allowed, and
+    # retry them even when an earlier lookup (as a signal name, ETFs not allowed) found nothing.
+    held = {r[0] for r in con.execute("SELECT ticker FROM universe_membership WHERE universe = ? AND source = 'positions'",
+                                      [SIGNALS]).fetchall()}
+    wanted -= tried - held
     if not wanted:
         con.close()
         return {"new_tickers": 0}
-    # Names held in the Decisions log may be ETFs (SCHD, QQQ…): resolve those like benchmarks, ETFs allowed.
-    held = {r[0] for r in con.execute("SELECT ticker FROM universe_membership WHERE universe = ? AND source = 'positions'",
-                                      [SIGNALS]).fetchall()}
     securities, history, calls = asyncio.run(resolve(wanted - held, wanted & held))
     existing = {r[0] for r in con.execute("SELECT security_id FROM securities").fetchall()}
     if len(securities):

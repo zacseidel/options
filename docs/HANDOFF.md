@@ -239,7 +239,8 @@ Since 2022-11-29 (CAGR / Sharpe / worst; 3y CAGR):
 - **Prices for position tickers:** registered as `signals` / source `positions` by the daily `signals` step, so they
   get bars back to their buy dates.
   - ETFs are allowed for these names (SCHD, TMFC).
-  - FSAGX (a mutual fund) and BBRK (unknown ticker, probably mistyped) have no prices and are left out of totals.
+  - FSAGX (a mutual fund) was replaced by GDX, and BBRK by BRK.B. Position tickers whose lookup failed are retried
+    each run.
 - Reports is now a link at the bottom of Overview (`#/reports` still works).
 
 ## Fixed 2026-10-21 (scheduled-run bugs)

@@ -89,12 +89,12 @@ GitHub's web editor; the daily run pulls `main` before it builds.
 - ASTS | 2026-01-09 | 10
 - AVGO | 2025-08-29 | 10
 - BE | 2026-09-09 | 10
-- BBRK | 2025-05-05 | 10
+- BRK.B | 2025-05-05 | 10 | Berkshire Hathaway B (was written BBRK)
 - COHR | 2026-09-11 | 10
 - CRDO | 2026-09-09 | 10
 - FIX | 2026-01-09 | 10
-- FSAGX | 2026-01-28 | 10
-- FSAGX | 2026-04-10 | 10
+- GDX | 2026-01-28 | 10 | stands in for FSAGX (Fidelity Select Gold, a mutual fund): GDX holds the same gold miners
+- GDX | 2026-04-10 | 10 | stands in for FSAGX (Fidelity Select Gold, a mutual fund): GDX holds the same gold miners
 - GOOG | 2025-11-24 | 10
 - GOOG | 2026-04-21 | 10
 - GOOG | 2026-09-09 | 10
